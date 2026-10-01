@@ -1,34 +1,30 @@
 # 11. Testing
 
-Maurice Wilkes, the designer of EDSAC, the first stored-program computer, had a startling realization in 1949 while climbing the stairs of his laboratory: "the realization came over me with full force that a good part of the remainder of my life was going to be spent in finding the errors in my own programs." Since then, generations of programmers have struggled to separate programs from bugs, and the techniques that have emerged for doing so are many.
+Every program of any size contains bugs; the only question is who finds them first. If it's the programmer, a bug costs a few minutes. If it's a user, it costs time, data, and trust, and then the programmer's time as well, now spent reconstructing what went wrong from a vague report. Most of the practices of professional software development, from code review to static types to staged rollouts, are ways of moving bug discovery earlier. This chapter is about the most direct of them: *automated testing*, writing code whose job is to check other code.
 
-The programs we write today are far larger and more complex than those of Wilkes's day, and a great deal of effort has gone into techniques that make that complexity manageable. Two of them stand out for their effectiveness. The first is routine peer review of programs before they are deployed. The second, the subject of this chapter, is testing.
+A test is a small program that runs some part of the *code under test* with chosen inputs and checks that the results are what they should be. The inputs might be picked by hand to probe particular cases, generated at random to probe many cases, or recorded from real use. Run often, tests catch mistakes moments after they're made, while the change that caused them is still fresh in mind. Kept around, they guard against old bugs coming back. And written early, they force a question that's easy to skip: what, exactly, is this code supposed to do?
 
-Testing, by which we implicitly mean automated testing, is the practice of writing small programs that check that the code under test (the *production code*) behaves as expected for certain inputs, which are usually either carefully chosen to exercise certain features or randomly chosen to ensure broad coverage.
-
-The field of software testing is enormous. The task of testing occupies all programmers some of the time and some programmers all of the time. The literature on testing includes thousands of printed books and millions of words of blog posts. In every mainstream programming language, there are dozens of software packages intended for test construction, some with a great deal of theory, and the field seems to attract more than a few elaborate frameworks and fashions, each with its own vocabulary and ritual.
-
-Swift's approach to testing might seem rather low-tech by comparison. It relies on one command, `swift test`, and a small library for writing tests. The library has changed over time. For a decade, the standard tool was *XCTest*, a framework descended from Objective-C's OCUnit, built around test classes and a family of `XCTAssert...` functions. Since Swift 6, the toolchain also includes *Swift Testing*, a newer library designed for the language's modern features: tests are ordinary functions marked with a macro, and a single `#expect` macro replaces the whole assertion family. This chapter teaches Swift Testing, which is the recommended choice for new code, and notes where XCTest differs.
+The Swift toolchain provides two testing libraries. *XCTest*, the older one, comes from the Objective-C world. Tests are methods of subclasses of `XCTestCase`, and checks are made with a family of functions like `XCTAssertEqual` and `XCTAssertNil`. *Swift Testing*, included in the toolchain since Swift 6, was designed around the modern language. A test is any function marked with the `@Test` macro, and nearly every check is written with a single macro, `#expect`, which inspects the expression you give it to produce a detailed failure message. Both libraries are run by the same command, `swift test`, and can coexist in one package. This chapter uses Swift Testing throughout, with notes where XCTest does things differently.
 
 ## 11.1. The `swift test` Tool
 
-`swift test` is a test driver for Swift packages. In a package directory, test sources live in test targets, conventionally under `Tests/`, declared in the manifest as `.testTarget`:
+Tests live in *test targets*, which the manifest declares with `.testTarget` and whose sources go, by convention, under `Tests/`:
 
 ```swift
 .testTarget(name: "EvalTests", dependencies: ["Eval"])
 ```
 
-Files in a test target can contain any code, but `swift test` looks for *tests*: declarations marked with `@Test`. It builds the test target, plus the targets it depends on, and then runs every test it finds. Tests run in parallel by default, and any test that fails is reported along with the reasons.
+`swift test` builds every test target, along with the code it depends on, finds every function marked `@Test`, and runs them all, in parallel unless told otherwise. It reports each failure with its source location and finishes with a summary.
 
-Compared with Go, where a test is a function with a magic name in a `_test.go` file, a Swift test is identified by an attribute, so names are free and tests can live in any file of a test target. And unlike in Go, tests live in a *separate module* from the code under test. The test module imports the production module just like any client would, and so it can see only `public` declarations. To test internal ones, use a *testable import*:
+A test target is a separate module from the code it tests. It imports the module under test like any other client, so by default it sees only `public` declarations. To reach `internal` ones, import the module with `@testable`:
 
 ```swift
 @testable import Eval
 ```
 
-`@testable` makes internal declarations visible, but only when the module was compiled with testing enabled, which `swift build` and `swift test` do for debug builds. It's a great convenience, but it can tempt you into testing implementation details; prefer testing the public interface when you can.
+A testable import works only when the module under test was compiled with testing enabled, as debug builds are by default. It's convenient, but use it with some restraint: tests that reach into internals have to change whenever the internals do. Testing through the public interface keeps tests valid across refactoring.
 
-Useful options include:
+These are the options you'll use most:
 
 ```
 $ swift test                         # build and run all tests
@@ -42,100 +38,111 @@ $ swift test list                    # list the tests without running them
 
 ## 11.2. `@Test` Functions
 
-A test is a function marked `@Test`. It can be a free function, or a method of a *suite*, a type whose members are tests. It passes if it returns normally, and fails if any of its expectations fail or it throws an uncaught error. Here's a first test, for the `palindrome` package, a function that reports whether a string reads the same forwards and backwards:
+A test is a function marked `@Test`, either at the top level of a file or inside a type that groups tests, called a *suite*. The test passes if it runs to completion with no failed expectations and no error escapes it.
+
+As a running example, we'll test a function that turns the title of an article into a *slug*, the short, lowercase, hyphenated form used in URLs, so that "Hello, World" can be found at `/blog/hello-world`. Here's a first attempt:
 
 ```swift
-// swiftpl/ch11/word1/Sources/Word/Word.swift
-/// Reports whether s reads the same forward and backward.
-/// (Our first attempt.)
-public func isPalindrome(_ s: String) -> Bool {
-    for i in 0..<s.count / 2 {
-        let a = s.index(s.startIndex, offsetBy: i)
-        let b = s.index(s.endIndex, offsetBy: -i - 1)
-        if s[a] != s[b] {
-            return false
-        }
-    }
-    return true
+// swiftpl/ch11/slug1/Sources/Slug/Slug.swift
+/// Converts a title to a URL slug: "Hello World" becomes "hello-world".
+/// (A first attempt.)
+public func slugify(_ title: String) -> String {
+    title.lowercased().split(separator: " ").joined(separator: "-")
 }
 ```
 
-and its test file:
+and a test file to go with it:
 
 ```swift
-// swiftpl/ch11/word1/Tests/WordTests/WordTests.swift
+// swiftpl/ch11/slug1/Tests/SlugTests/SlugTests.swift
 import Testing
-import Word
+import Slug
 
-@Test func palindromes() {
-    #expect(isPalindrome("detartrated"))
-    #expect(isPalindrome("kayak"))
+@Test func simpleTitle() {
+    #expect(slugify("Hello World") == "hello-world")
 }
 
-@Test func nonPalindrome() {
-    #expect(!isPalindrome("palindrome"))
+@Test func extraSpaces() {
+    #expect(slugify("  Swift   on   Linux ") == "swift-on-linux")
 }
 ```
 
-`#expect` is a macro that takes a boolean expression and records a failure if it's false. Unlike a plain `assert`, a failed expectation doesn't stop the test: the test keeps running, so one run can report several failures. (When a later step makes no sense after an earlier failure, use `try #require(...)`, described below.)
-
-Run the tests:
+`#expect` takes a Boolean expression and records a failure if it's false. A failed expectation doesn't end the test, so a test with several checks reports every one that fails, not just the first. (For checks that later code depends on, there's `#require`, which does stop the test; see Section 11.2.3.)
 
 ```
 $ swift test
 Building for debugging...
 Test run started.
 Testing Library Version: 6.1
-◇ Test palindromes() started.
-◇ Test nonPalindrome() started.
-✔ Test nonPalindrome() passed after 0.001 seconds.
-✔ Test palindromes() passed after 0.001 seconds.
+◇ Test simpleTitle() started.
+◇ Test extraSpaces() started.
+✔ Test simpleTitle() passed after 0.001 seconds.
+✔ Test extraSpaces() passed after 0.001 seconds.
 ✔ Test run with 2 tests passed after 0.001 seconds.
 ```
 
-Now suppose a bug report arrives: the function fails on Leigh Mercer's famous 1948 palindrome "A man, a plan, a canal: Panama," which has punctuation and mixed case, and someone asks whether it handles one in French with accents. We write a test that reproduces it, first, before fixing anything:
+(The exact format of the output varies a little between toolchain versions.)
+
+Both tests pass. Then the bug reports start arriving. A post titled "Hello, World!" got the slug `hello,-world!`, which is a legal but ugly URL, and one titled "Crème brûlée" got `crème-brûlée`, which some older systems mangle. Before touching the function, we write tests that capture the reports:
 
 ```swift
-@Test func canalPanama() {
-    #expect(isPalindrome("A man, a plan, a canal: Panama"))
+@Test func punctuation() {
+    #expect(slugify("Hello, World!") == "hello-world")
 }
 
-@Test func frenchPalindrome() {
-    #expect(isPalindrome("été"))
+@Test func accents() {
+    #expect(slugify("Crème brûlée") == "creme-brulee")
 }
 ```
 
+Both fail, as they should:
+
 ```
-✘ Test canalPanama() recorded an issue at WordTests.swift:14:5: Expectation failed: isPalindrome("A man, a plan, a canal: Panama")
-✔ Test frenchPalindrome() passed
+✘ Test punctuation() recorded an issue at SlugTests.swift:13:5: Expectation failed: (slugify("Hello, World!") → "hello,-world!") == "hello-world"
+✘ Test accents() recorded an issue at SlugTests.swift:17:5: Expectation failed: (slugify("Crème brûlée") → "crème-brûlée") == "creme-brulee"
 ```
 
-The `#expect` macro's failure message shows the *source text* of the expression, and, for comparisons, the values of the operands: `#expect(a == b)` reports `a == b → 3 == 4` with both sides evaluated. That's the reason there are no `assertEqual` variants: with macros, one construct covers everything and still gives detailed messages.
+Look at what the failure message contains: the source text of the expression, and the value of each side of the `==`. The macro sees the expression's structure at compile time and arranges to capture the operands, so a plain `==` reports as much as a specialized `assertEqual` would. That's why Swift Testing needs only one checking macro.
 
-Writing a test that fails before you fix the bug is good practice. It confirms that the test really catches the bug, and the test remains afterwards as a guard against regression. Now we fix the function to ignore everything that isn't a letter, and to compare letters ignoring case:
+Writing the failing test first is a habit worth building. It proves the test can detect the bug (a test that passes before the fix tests nothing), and afterwards it stays in the suite to catch a regression. Now the fix: fold away diacritics, then keep runs of letters and digits, with anything else acting as a separator:
 
 ```swift
-// swiftpl/ch11/word2/Sources/Word/Word.swift
-/// Reports whether s reads the same forward and backward,
-/// ignoring punctuation, spaces, and case.
-public func isPalindrome(_ s: String) -> Bool {
-    let letters = s.filter(\.isLetter).lowercased()
-    return letters == String(letters.reversed())
+// swiftpl/ch11/slug2/Sources/Slug/Slug.swift
+import Foundation
+
+/// Converts a title to a URL slug: lowercase letters and digits,
+/// with diacritics removed and words separated by single hyphens.
+public func slugify(_ title: String) -> String {
+    let folded = title.folding(options: .diacriticInsensitive, locale: nil).lowercased()
+    var words: [String] = []
+    var word = ""
+    for c in folded {
+        if c.isLetter || c.isNumber {
+            word.append(c)
+        } else if !word.isEmpty {
+            words.append(word)
+            word = ""
+        }
+    }
+    if !word.isEmpty {
+        words.append(word)
+    }
+    return words.joined(separator: "-")
 }
 ```
 
-The tests now pass. Notice that the second version is also simpler than the first and allocates less than it might seem: `filter` and `lowercased` each produce a string, and `reversed()` is lazy.
+Foundation's `folding(options:locale:)` maps "è" to "e", "û" to "u", and so on. Because the loop tests `isLetter` and `isNumber` rather than checking for ASCII, letters from other scripts survive: a Japanese title keeps its characters. All four tests pass.
 
 ### 11.2.1. Test Names and Traits
 
-A `@Test` can take a display name and *traits* that customize its behavior:
+`@Test` accepts a display name, for reports, and any number of *traits*, which adjust how or whether the test runs:
 
 ```swift
-@Test("Palindromes ignore punctuation and case")
+@Test("Punctuation becomes a word break")
 func punctuation() { ... }
 
 @Test(.tags(.slow), .timeLimit(.minutes(1)))
-func bigInput() { ... }
+func hugeInput() { ... }
 
 @Test(.disabled("waiting on bug #123"))
 func knownBad() { ... }
@@ -147,7 +154,7 @@ func onlyOnCI() { ... }
 func issue123() { ... }
 ```
 
-Tags, declared once with an extension and the `@Tag` macro, group tests across files so that `swift test --filter` and Xcode can select them:
+*Tags* label tests across files and suites. Each is declared once, with the `@Tag` macro, and can then be used to select tests with `swift test --filter` or in Xcode's test navigator:
 
 ```swift
 extension Tag {
@@ -156,41 +163,38 @@ extension Tag {
 }
 ```
 
-In the Go world, `testing.Short()` and build tags serve similar purposes. Swift's traits are declarative and appear in test reports.
+### 11.2.2. Parameterized Tests
 
-### 11.2.2. Table-Driven Tests
-
-The palindrome tests we have written so far are repetitive. The standard way to deal with that in Go is a *table-driven test*: a slice of inputs and expected outputs, and a loop. Swift Testing builds this in. A test can take a parameter, and the `arguments:` argument supplies a collection of values to run it with:
+Our four slug tests are nearly identical: call the function, compare with an expected string. As more cases arrive, writing a function for each becomes tedious. In many languages, the remedy is a hand-written loop over a table of cases. Swift Testing does the looping for you. Give the test a parameter, and supply the values with `arguments:`:
 
 ```swift
-// swiftpl/ch11/word3/Tests/WordTests/WordTests.swift
+// swiftpl/ch11/slug3/Tests/SlugTests/SlugTests.swift
 import Testing
-import Word
+import Slug
 
 @Test(arguments: [
-    ("", true),
-    ("a", true),
-    ("aa", true),
-    ("ab", false),
-    ("kayak", true),
-    ("detartrated", true),
-    ("été", true),
-    ("détartrated", false),  // é and e are different letters
-    ("Évian?", false),
-    ("A man, a plan, a canal: Panama", true),
-    ("Evil I did dwell; lewd did I live.", true),
-    ("Able was I ere I saw Elba", true),
-    ("Et se resservir, ivresse reste.", true),
-    ("No 'x' in Nixon", true),
-    ("palindrome", false),
-    ("desserts", false),
+    ("Hello World", "hello-world"),
+    ("  Swift   on   Linux ", "swift-on-linux"),
+    ("Hello, World!", "hello-world"),
+    ("Crème brûlée", "creme-brulee"),
+    ("Ünïcödé", "unicode"),
+    ("Swift 6.2 released", "swift-6-2-released"),
+    ("C++ vs. C#", "c-vs-c"),
+    ("日本語", "日本語"),
+    ("Straße", "straße"),  // ß is a letter of its own, not an accented s
+    ("---", ""),
+    ("", ""),
 ])
-func isPalindromeTest(_ input: String, _ want: Bool) {
-    #expect(isPalindrome(input) == want, "isPalindrome(\(input.debugDescription))")
+func slugs(_ title: String, _ want: String) {
+    #expect(slugify(title) == want)
 }
 ```
 
-Each argument, here an input paired with its expected result, is run as a separate *test case*, in parallel, and reported individually, so a failure names the input that failed. The expected results are written out by hand. It would be tempting to compute them with a second copy of the palindrome logic, but a test that checks a function against itself can't find anything wrong with it. If a test takes several parameters, pass tuples or use `zip`; with two collections as arguments, Swift Testing runs the *cartesian product*:
+Swift Testing runs each pair as its own *test case*. The cases run in parallel, each passes or fails on its own, and a failure is reported with the argument that caused it, so a single bad row doesn't hide the results of the rest.
+
+Two of those rows record *decisions* rather than obvious truths. Should "C++" and "C#" really both become "c"? Should "ß" stay as it is? Reasonable people could disagree; the table makes the choice explicit and visible to the next person who changes the function. Every expected value in the table was written by hand, and that matters. It's tempting to compute expected results with a copy of the code being tested, but a test that compares a function with itself can never fail.
+
+Tests may take more than one parameter. With two collections of arguments, Swift Testing runs every combination; to pair them up instead, pass a `zip`:
 
 ```swift
 @Test(arguments: [1, 2, 3], ["a", "b"])
@@ -200,7 +204,7 @@ func combos(n: Int, s: String) { ... }  // six test cases
 func pairs(n: Int, name: String) { ... }  // three test cases
 ```
 
-Here's a more typical table, pairing inputs with expected outputs. This one tests the expression parser of Section 7.9:
+For a larger table, a small struct reads better than a tuple, and conforming it to `CustomTestStringConvertible` controls how each case is named in reports. Here is a table for the expression evaluator of Section 7.9:
 
 ```swift
 struct Case: Sendable, CustomTestStringConvertible {
@@ -225,9 +229,7 @@ func evalTable(_ c: Case) throws {
 }
 ```
 
-Because the test function is `throws`, we can use plain `try` on the parser; if the parser throws, the test fails and reports the error. The `testDescription` makes each case readable in the report.
-
-The output shows the results for each case, and since the cases run independently, a failure in one doesn't hide the results of the others, the problem that Go programmers solve with `t.Run` subtests:
+Since `evalTable` is declared `throws`, it can call the parser with a plain `try`. If parsing fails, the error fails the test case and appears in the report. A failing case is identified by its description:
 
 ```
 ✘ Test evalTable(_:) with 6 test cases failed after 0.002 seconds with 1 issue.
@@ -236,7 +238,7 @@ The output shows the results for each case, and since the cases run independentl
 
 ### 11.2.3. Throwing and Required Expectations
 
-Errors are a normal part of behavior, so we need to test for them. `#expect(throws:)` checks that an operation throws:
+Failing correctly is part of a function's behavior, and deserves tests of its own. `#expect(throws:)` passes only if its closure throws an error of the expected kind:
 
 ```swift
 #expect(throws: SyntaxError.self) {
@@ -252,27 +254,27 @@ Errors are a normal part of behavior, so we need to test for them. `#expect(thro
 }
 ```
 
-The macro returns the thrown error (as an optional) so that you can inspect it further:
+When the error is caught, the macro returns it, so the test can examine it further:
 
 ```swift
 let error = #expect(throws: SyntaxError.self) { try parse("1 +") }
 #expect(error?.description.contains("unexpected") == true)
 ```
 
-`try #require(...)` is the stricter form: if the condition is false (or an optional is `nil`), the test *stops* immediately by throwing. It's meant for preconditions of the rest of the test. It also unwraps optionals, which makes it a tidy replacement for Go's `if err != nil { t.Fatal(err) }` pattern:
+`#require` is the strict version of `#expect`. If its condition is false, it records the failure and then *throws*, ending the test on the spot, so it must be written with `try`. Use it for facts the rest of the test can't do without. Given an optional, it unwraps it, which removes a lot of awkward `if let` scaffolding from tests:
 
 ```swift
 @Test func lookup() throws {
-    let user = try #require(db.user(named: "ada"))  // fails and stops if nil
-    #expect(user.id == 1)  // safe to continue: user is a User, not a User?
+    let user = try #require(db.user(named: "ada"))  // stops the test if nil
+    #expect(user.id == 1)  // user is a User here, not a User?
 }
 ```
 
-Use `#expect` for ordinary checks, so one run can report many failures, and `#require` when continuing would be pointless or would crash.
+A good default is `#expect` for checks and `#require` for preconditions.
 
 ### 11.2.4. Suites, Setup, and Teardown
 
-Group related tests in a struct, class, or actor, called a *suite*. Each test method runs on a *fresh instance* of the suite, so state created in `init` is private to the test, and `deinit` (for classes and actors) serves as teardown. This replaces XCTest's `setUp` and `tearDown` and Go's `TestMain`:
+A *suite* is a struct, class, or actor whose methods are tests. Swift Testing creates a new instance of the suite for every test it runs, so the suite's initializer is the place for setup, and, in a class or actor, `deinit` is the place for teardown. No test ever sees state left behind by another:
 
 ```swift
 @Suite("Temporary directory tests")
@@ -292,11 +294,11 @@ struct FileTests {
 }
 ```
 
-Because each test gets its own instance, tests in a suite don't interfere with each other even though they run in parallel. Mark a suite `@Suite(.serialized)` to run its tests one at a time when they share an unavoidable resource such as a database or a fixed port.
+Each test gets a fresh instance, and so a fresh directory, which is what lets tests in a suite run in parallel safely. When tests must share something that can't be duplicated, such as a single external database or a fixed network port, mark the suite `@Suite(.serialized)` to run its tests one after another.
 
 ### 11.2.5. Testing Asynchronous Code
 
-Tests may be `async`, and may use `await` freely, which makes testing the concurrent programs of Chapters 8 and 9 straightforward:
+A test function can be `async`, and then it can `await` like any other asynchronous code. That makes the concurrent programs of Chapters 8 and 9 straightforward to test:
 
 ```swift
 /// A thread-safe call counter. (A Mutex is noncopyable, so it can't be
@@ -321,7 +323,7 @@ final class CallCount: Sendable {
 }
 ```
 
-Callback-based APIs can be tested with `confirmation`, which checks how many times an event occurs:
+For APIs that report events through callbacks rather than return values, `confirmation` checks that the callback happens the right number of times:
 
 ```swift
 /// A minimal callback-based event source.
@@ -340,40 +342,40 @@ final class Ticker {
 }
 ```
 
-### 11.2.6. Randomized Testing
+### 11.2.6. Randomized and Property-Based Testing
 
-Table-driven tests are only as good as the examples we think of. A complementary technique is *randomized* testing, which explores a broader range of inputs by constructing them at random. How do we know what output to expect from our random input? There are two strategies. The first is to write an alternative implementation of the function that uses a less efficient but simpler and clearer algorithm, and check that both implementations give the same result. The second is to create input values according to a pattern so that we know what output to expect.
+A table checks the cases its author thought of. Bugs, unhelpfully, tend to live in the cases nobody thought of. Randomized testing explores further by generating inputs by the thousand. The difficulty is knowing what the right answer is for an input nobody wrote down.
 
-The example below uses the second approach: the `randomPalindrome` function constructs words that are known to be palindromes by building the first half and then reflecting it.
+One strategy is a second, simpler implementation (slow, perhaps, but obviously correct) to compare against. Another is to check *properties*: statements that must be true of the output for every input, whatever the exact answer is. A slug, for instance, should never begin or end with a hyphen or contain two in a row; should contain only lowercase letters, digits, and hyphens; and should be unchanged if slugified again. None of those needs a precomputed answer, and together they rule out a lot of wrong code.
+
+Here's a property-based test for `slugify`. It builds random titles from a pool of characters chosen to include awkward ones: punctuation, accented capitals, digits, underscores, a hyphen, and some CJK text.
 
 ```swift
-// swiftpl/ch11/word3
-/// Returns a palindrome whose length and contents are derived from the generator.
-func randomPalindrome(using rng: inout some RandomNumberGenerator) -> String {
-    let n = Int.random(in: 0..<25, using: &rng)  // random length up to 24
-    var half: [Character] = []
-    for _ in 0..<(n + 1) / 2 {
-        // A random letter from the Latin range U+0061...U+024F.
-        let scalar = Unicode.Scalar(UInt32.random(in: 0x61...0x24F, using: &rng)) ?? "a"
-        half.append(Character(scalar))
-    }
-    // Reflect the first half; drop the middle letter when the length is odd.
-    let tail = n % 2 == 0 ? half.reversed() : half.dropLast().reversed()
-    return String(half) + String(tail)
+// swiftpl/ch11/slug3
+/// Returns a random title of up to 29 characters from an awkward alphabet.
+func randomTitle(using rng: inout some RandomNumberGenerator) -> String {
+    let pool = Array("abcXYZ019 éÉçÇ-_,.!?'日本 ")
+    let n = Int.random(in: 0..<30, using: &rng)
+    return String((0..<n).map { _ in pool.randomElement(using: &rng)! })
 }
 
-@Test func randomPalindromes() {
-    var rng = SeededGenerator(seed: 42)  // a deterministic generator
+@Test func slugProperties() {
+    var rng = SeededGenerator(seed: 42)  // deterministic, so failures reproduce
     for _ in 0..<1000 {
-        let p = randomPalindrome(using: &rng)
-        #expect(isPalindrome(p), "isPalindrome(\(p.debugDescription)) = false")
+        let title = randomTitle(using: &rng)
+        let slug = slugify(title)
+        let context: Comment = "slugify(\(title.debugDescription)) = \(slug.debugDescription)"
+
+        #expect(!slug.hasPrefix("-") && !slug.hasSuffix("-") && !slug.contains("--"), context)
+        #expect(slug.allSatisfy { $0 == "-" || (($0.isLetter || $0.isNumber) && !$0.isUppercase) }, context)
+        #expect(slugify(slug) == slug, context)  // idempotent
     }
 }
 ```
 
-Some of the generated characters aren't letters (U+00D7 is a multiplication sign, for example), and `isPalindrome` ignores those, which is fine: a string that is a palindrome stays one when some characters are removed.
+Each check carries a message that includes the generated title, so a failure tells you exactly which input broke the property.
 
-Since the program is random, we want to be able to reproduce any failure. That's why we use a *seeded* generator rather than the system's default: the sequence of values is fully determined by the seed, so a failing run can be repeated exactly. Swift's standard library has no seedable generator built in, but the protocol `RandomNumberGenerator` has a single requirement, so a small one is easy to write:
+Random tests must still be reproducible. A test that fails once and then can't be made to fail again is a frustrating thing to debug. So the generator is *seeded*: given the same seed, it produces the same sequence, and the test produces the same inputs on every run. The standard library's default generator can't be seeded, but `RandomNumberGenerator` asks for only one method, so it takes a few lines to write one. This is SplitMix64, a small, fast, well-studied algorithm:
 
 ```swift
 /// A fast, deterministic generator (SplitMix64) for reproducible tests.
@@ -391,117 +393,147 @@ struct SeededGenerator: RandomNumberGenerator {
 }
 ```
 
-If you want fresh inputs on each run, but still need reproducibility, choose the seed from the clock, and *print it* so that a failure message includes it.
+A fixed seed explores the same thousand inputs every time. To explore new ground on each run while keeping failures reproducible, derive the seed from the clock and include it in every failure message.
 
-Wherever one function has a simple inverse, randomized *round-trip* tests are especially effective: encode and then decode a random value and check that you get the original back. This is how you'd test the JSON `Codable` types of Section 4.5.
+Round trips are a particularly productive kind of property: for an encoder and decoder, `decode(encode(x)) == x` must hold for every `x`. That's a natural way to test the `Codable` types of Section 4.5 and the S-expression encoder of Chapter 12.
 
 ### 11.2.7. Testing a Command
 
-The `swift test` tool is useful for testing library code, but with a little effort we can use it to test commands too. Package `echo` of Section 2.3.2 is split into two parts: a library function `echo` that does the real work, and an executable `main` that parses flags and calls it. A function that writes to the standard output is hard to test, so we give it an *output parameter*, a `TextOutputStream` (Section 7.1), and test with a string:
+Command-line programs are tested most easily when their logic is pulled out of `main` into functions that take their inputs as parameters and deliver their output somewhere the test can see. Printing straight to the standard output is the usual obstacle. The fix is to have the function write to a `TextOutputStream` (Section 7.1) passed by the caller: the real program passes the standard output, and a test passes a `String`.
+
+Here's the core of `tally`, a command that prints the most frequent words in its input:
 
 ```swift
-// swiftpl/ch11/echo
-func echo(_ args: [String], separator: String, newline: Bool,
-          to out: inout some TextOutputStream) {
-    out.write(args.joined(separator: separator))
-    if newline {
-        out.write("\n")
+// swiftpl/ch11/tally
+/// Writes the n most frequent words in text, most frequent first,
+/// with ties broken alphabetically.
+func tally(_ text: String, top n: Int, to out: inout some TextOutputStream) {
+    var counts: [String: Int] = [:]
+    for word in text.split(whereSeparator: { !$0.isLetter }) {
+        counts[word.lowercased(), default: 0] += 1
+    }
+    let ranked = counts.sorted {
+        $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key
+    }
+    for (word, count) in ranked.prefix(n) {
+        out.write("\(count) \(word)\n")
     }
 }
+```
 
+and a test of it:
+
+```swift
 @Test(arguments: [
-    (newline: true, sep: "", args: [String](), want: "\n"),
-    (newline: false, sep: "", args: [], want: ""),
-    (newline: true, sep: "\t", args: ["one", "two", "three"], want: "one\ttwo\tthree\n"),
-    (newline: true, sep: ",", args: ["a", "b", "c"], want: "a,b,c\n"),
-    (newline: false, sep: ":", args: ["1", "2", "3"], want: "1:2:3"),
+    (text: "", top: 3, want: ""),
+    (text: "a b a", top: 1, want: "2 a\n"),
+    (text: "The the THE cat", top: 2, want: "3 the\n1 cat\n"),
+    (text: "pear apple pear apple fig", top: 2, want: "2 apple\n2 pear\n"),
+    (text: "one, two; three", top: 5, want: "1 one\n1 three\n1 two\n"),
 ])
-func echoTest(newline: Bool, sep: String, args: [String], want: String) {
+func tallyTest(text: String, top: Int, want: String) {
     var out = ""
-    echo(args, separator: sep, newline: newline, to: &out)
+    tally(text, top: top, to: &out)
     #expect(out == want)
 }
 ```
 
-Notice that the test passes a `String` as the output. It's *dependency injection* of the simplest kind: the function depends on an abstraction, not on the real standard output, so the test can substitute a stand-in. The same idea applies broadly. A function that needs the current time, a random number, the file system, or the network can take a parameter, a protocol, or a closure, that a test replaces with a deterministic version.
+This is *dependency injection* at its most modest: rather than reaching for the standard output itself, the function lets its caller decide where output goes. The same move works for anything a function would otherwise grab from its environment, such as the current time, randomness, files, or the network, and it's the most useful single technique for making code testable.
 
 ### 11.2.8. White-Box Testing
 
-One way of categorizing tests is by the level of knowledge they require of the internal workings of the code under test. A *black-box* test assumes nothing about the module other than what is exposed by its public API and documented by its specification. In contrast, a *white-box* test has privileged access to the internal functions and data structures of the module and can make observations and changes that an ordinary client cannot. For example, a white-box test can check that the invariants of the module's data types are maintained after every operation.
+Tests can be sorted by how much they know about the code they test. A *black-box* test uses only the public interface and the documented behavior; it knows *what* the code should do but not *how*. A *white-box* test also uses knowledge of the implementation. It might check internal invariants after each operation, or steer execution into a particular branch.
 
-The two approaches are complementary. Black-box tests are usually more robust, needing little updating as the software evolves, and they help the test author empathize with the client of the module and can reveal flaws in the API design. White-box tests can provide more detailed coverage of the trickier parts of the implementation.
+Each kind has its strengths. Black-box tests survive refactoring, since they don't depend on the internals, and writing them puts you in the client's position, which tends to expose awkward APIs. White-box tests can reach corners that are hard to provoke from outside. In Swift, the distinction maps onto imports: a plain `import` gives a black-box test, and `@testable import` lets a white-box test see `internal` details.
 
-In Swift, plain `import` gives you a black-box test, and `@testable import` a white-box one. For example, `Memo`'s internal cache could be inspected by a test with `@testable` to confirm that it never holds more than one task per key.
-
-Sometimes you can make a white-box test unnecessary by injecting a *fake* for a dependency. Consider a function that sends a quota-warning email when a user exceeds 90% of their allowance. Testing it by really sending email would be unacceptable, so we make the sender a parameter:
+Often, though, the best way to test hard-to-reach behavior is to make it easy to reach by injecting its dependencies. Consider a rate limiter that allows at most `limit` events in any window of `window` seconds. Its behavior depends on the passage of time, and a test that actually waited for windows to expire would be slow and flaky. So the limiter takes its clock as a parameter, defaulting to the real one:
 
 ```swift
-// swiftpl/ch11/storage
-protocol Notifier: Sendable {
-    func notify(user: String, message: String) async
-}
+// swiftpl/ch11/ratelimit
+import Foundation
 
-func checkQuota(user: String, used: Int, quota: Int, notifier: some Notifier) async {
-    guard used * 100 >= quota * 90 else { return }
-    await notifier.notify(user: user, message: "You are using \(used * 100 / quota)% of your quota.")
-}
-```
+struct RateLimiter {
+    let limit: Int
+    let window: Double  // seconds
+    private let now: () -> Double
+    private var recent: [Double] = []  // times of recent events
 
-The test substitutes a recording fake:
+    init(limit: Int, window: Double, now: @escaping () -> Double = { Date().timeIntervalSince1970 }) {
+        self.limit = limit
+        self.window = window
+        self.now = now
+    }
 
-```swift
-actor RecordingNotifier: Notifier {
-    private(set) var sent: [(user: String, message: String)] = []
-    func notify(user: String, message: String) {
-        sent.append((user, message))
+    /// Records an event and reports whether it's within the limit.
+    mutating func allow() -> Bool {
+        let t = now()
+        recent.removeAll { $0 <= t - window }
+        guard recent.count < limit else {
+            return false
+        }
+        recent.append(t)
+        return true
     }
 }
+```
 
-@Test func warnsAtNinetyPercent() async {
-    let fake = RecordingNotifier()
-    await checkQuota(user: "ada@example.com", used: 980_000_000, quota: 1_000_000_000, notifier: fake)
-    let sent = await fake.sent
-    #expect(sent.count == 1)
-    #expect(sent.first?.user == "ada@example.com")
-    #expect(sent.first?.message.contains("98%") == true)
+The test supplies a clock it controls completely:
+
+```swift
+@Test func limitsBursts() {
+    var time = 0.0
+    var limiter = RateLimiter(limit: 2, window: 1.0, now: { time })
+
+    #expect(limiter.allow())
+    #expect(limiter.allow())
+    #expect(!limiter.allow())  // third event in the same instant: refused
+
+    time = 0.9
+    #expect(!limiter.allow())  // still inside the window
+
+    time = 1.5
+    #expect(limiter.allow())  // the first two events have aged out
 }
 ```
 
-The fake is an actor so that it's `Sendable` and can safely record from any task.
+The test runs in microseconds, and its timing is exact. It's still a black-box test: it uses only the limiter's public behavior. The injected clock is part of the interface, not a peek at the implementation.
 
-### 11.2.9. Good Tests
+### 11.2.9. Writing Good Tests
 
-Go's authors describe tests that report failures by printing the function called, its inputs, the actual result, and the expected result, so that the message is a complete bug report. `#expect` does much of that automatically, but it's worth adding context, in its optional message, when the expression alone isn't enough:
+When a test fails, its message is often all that someone has to go on, perhaps someone else, months from now, looking at a CI log. Make sure the message says what was being tested, with what input, what happened, and what should have happened. `#expect` supplies the expression and its values; add the rest with its optional comment argument when the expression alone isn't self-explanatory:
 
 ```swift
-#expect(got == want, "isPalindrome(\(input.debugDescription)) = \(got), want \(want)")
+#expect(got == want, "slugify(\(title.debugDescription)) = \(got.debugDescription), want \(want.debugDescription)")
 ```
 
-Good tests share a few qualities. They're *deterministic*: a test that sometimes fails is worse than none, because people learn to ignore it. They're *independent*: no test should depend on another having run first, since tests run in parallel and in no guaranteed order. They're *fast*, so that they're run constantly. And they test *behavior*, not implementation, so that they needn't change whenever the code is refactored.
+Beyond messages, a few properties separate tests that help from tests that hinder:
 
-Avoid being fooled by tests that don't test anything: a test that compares a function's output with the function's own output, or one whose expected value was copied from a first, unchecked run. And don't try to test everything. Tests cost maintenance, and testing trivial code (simple getters, one-line wrappers) is rarely worth it.
+- **Deterministic.** A test that fails intermittently trains everyone to ignore failures. Control time, randomness, and ordering.
+- **Independent.** Tests run in parallel and in no particular order; none may rely on another's side effects.
+- **Fast.** Slow suites get run less often, and a bug caught a day later costs more.
+- **About behavior.** A test that pins down *how* the code works must be rewritten whenever the implementation improves. A test of *what* it does keeps paying off.
 
-**Exercise 11.1:** Write `randomNonPalindrome(using:)`, which produces a string that's guaranteed not to be a palindrome, and test that `isPalindrome` rejects 1,000 of them.
+And beware tests that can't fail: those that compare a function's output with itself, and those whose expected values were pasted from the code's first run without being checked. Finally, don't aim to test everything. Tests have a maintenance cost too, and trivial code is rarely worth it. Spend the effort where bugs are likely and costly.
 
-**Exercise 11.2:** Write a randomized test for the `IntSet` of Section 6.5 by comparing its behavior against `Set<Int>` over a long random sequence of `insert`, `contains`, and `formUnion` operations.
+**Exercise 11.1:** Write a *reference* implementation of `slugify` using a regular expression (`Regex` or `NSRegularExpression`) instead of a loop, and a randomized test that checks the two agree on 10,000 random titles. When they disagree, which one is right?
 
-**Exercise 11.3:** Write tests for the `comma` function of Section 3.5, including negative numbers and decimals once you've completed Exercise 3.11.
+**Exercise 11.2:** Write a randomized test for the `IntSet` of Section 6.5 that applies a long random sequence of `insert`, `contains`, and `formUnion` operations to both an `IntSet` and a `Set<Int>` and checks that they always agree.
 
-**Exercise 11.4:** Write a test that checks the round trip `decode(encode(x)) == x` for random `Movie` values from Section 4.5.
+**Exercise 11.3:** Write tests for the `comma` function of Section 3.5. Once you've done Exercise 3.11, extend them to cover signs and decimals.
 
-**Exercise 11.5:** Write a table-driven test for `topoSort` (Section 5.6.2) that checks, for each edge, that the prerequisite comes first in the output.
+**Exercise 11.4:** Write a round-trip test, `decode(encode(x)) == x`, for randomly generated values of the `Movie` type from Section 4.5.
 
-**Exercise 11.6:** Write a test for the concurrent `Memo` actor of Section 9.7 that starts 100 concurrent requests for the same key and checks that the function was called once.
+**Exercise 11.5:** Write a parameterized test for `topoSort` (Section 5.6.2) that checks, for every course and each of its prerequisites, that the prerequisite comes first.
+
+**Exercise 11.6:** Test the `Memo` actor of Section 9.7 by starting 100 concurrent requests for one key and checking that the underlying function ran exactly once.
 
 ## 11.3. Coverage
 
-By its nature, testing is never complete. As the influential computer scientist Edsger Dijkstra put it, "Testing shows the presence, not the absence of bugs." No quantity of tests can ever prove a package free of bugs. At best, they increase our confidence that the package works well in a wide range of important scenarios.
+However many tests you write, they examine only some of the program's possible executions; the rest go unchecked. It's useful to know which parts of the code the tests never reach, since bugs there will be found by users. *Coverage* measures that.
 
-The degree to which a test suite exercises the package under test is called the test's *coverage*. Coverage can't be quantified directly, since the dynamic behavior of all but the most trivial programs is beyond precise measurement, but there are heuristics that can help us direct our testing efforts to where they are more likely to be useful.
+The simplest and most common measure is *statement coverage*: the proportion of the program's statements that were executed at least once during the test run. Swift's tooling, which is built on LLVM's, reports it per line and per *region* (a finer unit that distinguishes, for example, the two sides of `&&`). High coverage doesn't prove anything is correct, but low coverage proves that something is untested.
 
-*Statement coverage* is the simplest and most widely used of these heuristics. The statement coverage of a test suite is the fraction of source statements that are executed at least once during the test. In this section, we'll use `swift test`'s coverage tool to measure statement (really, *line* and *region*) coverage and help identify obvious gaps in the tests.
-
-The code below is a table-driven test for the expression evaluator we built in Chapter 7:
+Let's measure the tests for the expression evaluator of Chapter 7. Suppose they consist of a single parameterized test:
 
 ```swift
 // swiftpl/ch11/eval
@@ -515,7 +547,7 @@ The code below is a table-driven test for the expression evaluator we built in C
 func parseAndEval(_ input: String, _ want: String?) throws { ... }
 ```
 
-Let's check how much of the evaluator these tests cover. Run the tests with coverage enabled, then ask `llvm-cov` for a report:
+`swift test` collects coverage data when asked, and `llvm-cov` turns the data into a report:
 
 ```
 $ swift test --enable-code-coverage
@@ -534,9 +566,9 @@ Parser.swift        52      11  78.85%        12     100.00%   141      14  90.0
 TOTAL               90      18  80.00%        21      95.24%   237      24  89.87%
 ```
 
-(On macOS, the tool is invoked as `xcrun llvm-cov`, and the test bundle path ends in `.xctest/Contents/MacOS/...`; on Linux, as shown. Your numbers will differ.)
+(On macOS, run the tool as `xcrun llvm-cov` and point it at the executable inside the `.xctest` bundle. Your figures will differ from these illustrative ones.)
 
-Our test coverage is 90% of lines, which is decent, but we'd like to see *which* lines were missed. The `show` subcommand annotates the source with execution counts:
+Nine lines in ten is respectable, but the summary doesn't say *which* tenth was missed. The `show` subcommand prints the source annotated with how many times each line ran:
 
 ```
 $ llvm-cov show .build/debug/evalPackageTests.xctest \
@@ -551,72 +583,68 @@ $ llvm-cov show .build/debug/evalPackageTests.xctest \
    59|      0|            case "/": return x.eval(env) / y.eval(env)
 ```
 
-The count column shows that subtraction and division never ran. Lines with a count of zero are the ones the tests never exercised. Adding two rows to the table fixes them:
+The zeros jump out: no test ever subtracted or divided. Two more rows close the gap:
 
 ```swift
     ("10 - 4", "6"),
     ("9 / 3", "3"),
 ```
 
-An HTML report with the same information, in color, is produced by `llvm-cov show -format=html -output-dir=coverage`, and Xcode shows coverage inline in its editor.
+`llvm-cov show -format=html -output-dir=coverage` writes the same information as a browsable, color-coded site, and Xcode can display coverage directly in the editor's gutter.
 
-Achieving 100% statement coverage sounds like a noble goal, but it's almost always impractical and unlikely to be a good use of effort. Just because a statement is executed doesn't mean it's bug-free; statements containing complex expressions must be executed many times with different inputs to cover the interesting cases. Some statements, like the `fatalError` in the default branch of a `switch`, can't be reached by definition. Others, such as error-handling code for hardware failures, are hard to reach but also hard to test.
-
-Testing is fundamentally a pragmatic endeavor, a trade-off between the cost of writing tests and the cost of failures that tests might have prevented. Coverage tools can help identify the weakest spots, but devising good test cases demands the same rigorous thinking as programming in general.
+Treat coverage as a flashlight, not a score. Reaching 100% is rarely worth the effort, and it guarantees less than it seems to. A line that ran once, with one input, may still be wrong for others. Some lines are unreachable by design, such as a `fatalError` in a `default` case that can't happen. Others, such as recovery from a full disk, are reachable but expensive to test. What coverage does well is point out large, important regions of code that no test touches at all. Those are where to write the next tests.
 
 ## 11.4. Benchmarks
 
-Benchmarking is the practice of measuring the performance of a program on a fixed workload. In Go, benchmarks are a built-in kind of function in the `testing` package. Swift Testing doesn't provide benchmarks; it's focused on correctness. Performance measurement in Swift uses one of three approaches.
+A *benchmark* measures how long a piece of code takes, or how much memory it uses, on a fixed workload, so that you can compare implementations or notice when a change makes things slower. Swift Testing is concerned with correctness and has no benchmark support, so Swift programmers measure performance in one of three ways.
 
-The simplest is to time a block of code with `ContinuousClock`, whose `measure` method returns a `Duration`:
+The quickest is to time the code with a clock. `ContinuousClock` has a `measure` method that runs a closure and returns how long it took:
 
 ```swift
 let clock = ContinuousClock()
 let elapsed = clock.measure {
     for _ in 0..<1000 {
-        _ = isPalindrome("A man, a plan, a canal: Panama")
+        _ = slugify("Crème brûlée: A Surprisingly Long Title, With Punctuation!")
     }
 }
 print("1000 calls took \(elapsed)")
 ```
 
-That's fine for a rough comparison, but naïve timing is fragile. The first iteration may be slower because of cold caches and lazy initialization; the optimizer may notice that the result is never used and delete the loop altogether; and a single measurement says nothing about variance. Run such experiments in a release build (`swift run -c release`), use the result, and run them several times.
-
-To avoid the optimizer's cleverness, pass the result through a function that the compiler can't see through. A convention is a function named `blackHole`, marked `@inline(never)`:
+This is fine for a quick look, but it's easy to fool yourself. A debug build may be an order of magnitude slower than a release build, so always measure with `-c release`. The first iterations pay for cold caches and lazy initialization. One measurement says nothing about how much results vary from run to run. And the optimizer, noticing that the result is discarded, may remove the work entirely and report an impressively short time for doing nothing. The standard defense is to pass every result to a function that the optimizer can't see into:
 
 ```swift
 @inline(never) func blackHole<T>(_ x: T) {}
 
 for _ in 0..<1000 {
-    blackHole(isPalindrome(input))
+    blackHole(slugify(title))
 }
 ```
 
-The second approach is the `XCTest` framework's `measure` method, which runs a block ten times and records the average and standard deviation, and which on Apple platforms integrates with Xcode's baselines for regression detection:
+XCTest provides a more careful harness: its `measure` method runs a block several times and reports the mean and the spread, and on Apple platforms Xcode can record a baseline and flag later runs that regress:
 
 ```swift
 import XCTest
 
-final class PalindromeBenchmarks: XCTestCase {
+final class SlugBenchmarks: XCTestCase {
     func testPerformance() {
         measure {
-            for _ in 0..<1000 { _ = isPalindrome("A man, a plan, a canal: Panama") }
+            for _ in 0..<1000 { _ = slugify("Crème brûlée: A Surprisingly Long Title!") }
         }
     }
 }
 ```
 
-The third approach, for serious benchmarking, is the `package-benchmark` package from Ordo One. It provides a separate `swift package benchmark` command and a `Benchmark` API, runs each benchmark many times, and reports statistics across several *metrics*: wall-clock time, CPU time, memory allocations, retain/release counts, and context switches. Allocation and reference-counting metrics are especially valuable in Swift, where hidden costs are as often in ARC traffic as in raw computation:
+For systematic work, the `package-benchmark` package is the community standard. Benchmarks live in their own targets and run with `swift package benchmark`; each is executed many times, and the results are reported as percentiles across several metrics. Besides time, it can count heap allocations and retain/release operations. In Swift, those counts are often the most informative numbers, since a surprising share of run time goes to memory management:
 
 ```swift
-// Benchmarks/Palindrome/Palindrome.swift
+// Benchmarks/Slug/Slug.swift
 import Benchmark
-import Word
+import Slug
 
 let benchmarks = {
-    Benchmark("isPalindrome") { benchmark in
+    Benchmark("slugify") { benchmark in
         for _ in benchmark.scaledIterations {
-            blackHole(isPalindrome("A man, a plan, a canal: Panama"))
+            blackHole(slugify("Crème brûlée: A Surprisingly Long Title, With Punctuation!"))
         }
     }
 }
@@ -624,100 +652,101 @@ let benchmarks = {
 
 ```
 $ swift package benchmark
-Palindrome:isPalindrome
+Slug:slugify
 ╒═════════════════════════╤═════════╤═════════╤═════════╤═════════╤═════════╤═════════╤═════════╤═════════╕
 │ Metric                  │      p0 │     p25 │     p50 │     p75 │     p90 │     p99 │    p100 │ Samples │
 ╞═════════════════════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╡
-│ Time (wall clock) (ns)  │     480 │     498 │     512 │     531 │     558 │     640 │    1920 │  100000 │
-│ Malloc (total)          │       3 │       3 │       3 │       3 │       3 │       3 │       3 │  100000 │
+│ Time (wall clock) (ns)  │    2140 │    2210 │    2260 │    2330 │    2410 │    2780 │    6950 │   10000 │
+│ Malloc (total)          │      14 │      14 │      14 │      14 │      14 │      14 │      14 │   10000 │
 ...
 ```
 
-Whichever approach you use, the guidance is the same. Measure before you optimize, since intuitions about performance are frequently wrong; measure in release mode, with representative inputs; and compare *before and after* on the same machine. Benchmarks are most useful as a comparison between alternative implementations. For example, we can measure the first, loop-based `isPalindrome` of Section 11.2 against the filter-and-reverse one. Which is faster? Which allocates less?
+(The figures are illustrative.) Fourteen allocations for one short title suggests room for improvement: every word becomes a separate `String`, then an array element, before being joined.
 
-**Exercise 11.7:** Benchmark the two versions of `isPalindrome`, and then a third that uses two indices walking inward over the `unicodeScalars` of an ASCII-lowercased copy. How does performance depend on the length of the input?
+Whatever the tool, the method is the same. Decide what you want to know before you measure. Measure optimized builds on realistic inputs. Change one thing at a time. Compare before and after on the same machine. And be suspicious of results that look too good.
 
-**Exercise 11.8:** Benchmark `IntSet` against `Set<Int>` for `insert`, `contains`, and `formUnion` at several set sizes. Where does the bit vector win?
+**Exercise 11.7:** Write a faster `slugify` that builds its result in a single `String`, appending a hyphen only when a new word starts, instead of collecting words in an array. Benchmark both versions on short and long titles, counting allocations as well as time. Make sure the parameterized and property-based tests still pass.
 
-**Exercise 11.9:** Measure the cost of `ArraySlice` against `Array` copies in a recursive algorithm like merge sort, with `-c release`.
+**Exercise 11.8:** Benchmark `IntSet` against `Set<Int>` for `insert`, `contains`, and `formUnion` at several sizes. Where does each one win?
+
+**Exercise 11.9:** Write a merge sort that recurses on `ArraySlice`s and another that copies into new arrays at each level. Measure the difference in a release build.
 
 ## 11.5. Profiling
 
-Benchmarks are useful for measuring the performance of specific operations, but when we're trying to make a slow program faster, we often have no idea where to begin. Every programmer knows Donald Knuth's aphorism about premature optimization, which appeared in "Structured Programming with go to Statements" in 1974. Although it is often misquoted to mean that performance doesn't matter, in its original context we can see the intended meaning: "There is no doubt that the grail of efficiency leads to abuse. Programmers waste enormous amounts of time thinking about, or worrying about, the speed of noncritical parts of their programs, and these attempts at efficiency actually have a strong negative impact when debugging and maintenance are considered. We *should* forget about small efficiencies, say about 97% of the time: premature optimization is the root of all evil. Yet we should not pass up our opportunities in that critical 3%."
+A benchmark tells you *how* fast something is. When a whole program is too slow, the first question is *where* the time goes, and intuition is notoriously bad at answering it. Programmers routinely spend effort speeding up code that accounts for 1% of the run time while the real cost hides somewhere they never thought to look. A *profiler* answers the question with data. It samples what the program is doing many times a second while it runs, then aggregates the samples into a report of which functions, and which call paths, account for the time.
 
-When we wish to look carefully at the speed of our programs, the best technique for identifying the critical code is *profiling*. Profiling is an automated approach to performance measurement based on sampling a number of profile events during execution, then extrapolating from them during a post-processing step; the resulting statistical summary is called a profile.
+On Apple platforms, the profiler is *Instruments*, part of Xcode. Its Time Profiler records stack samples from every thread and presents them as a call tree, with time attributed both to each function's own code and to everything it calls. Other instruments track allocations and leaks, file and network activity, thread scheduling, and energy. For Swift programs, the *Allocations* instrument and the *Swift Concurrency* instruments, which chart tasks and actors over time, are especially useful.
 
-On Apple platforms, the profiler of choice is *Instruments*, which is part of Xcode. Its *Time Profiler* samples the call stacks of every thread at high frequency and presents the result as a call tree, showing which functions the program spends the most time in, both themselves ("self time") and including their callees. Other instruments measure allocations, leaks, system calls, disk and network I/O, thread states, and energy use. Because Swift's performance is often dominated by memory allocation and reference counting, the *Allocations* instrument and the *Swift Tasks* instrument (which shows when tasks are created, suspended, and resumed) are particularly useful for Swift programs.
-
-On Linux, the standard tool is `perf`, together with a flame-graph generator:
+On Linux, the standard tool is `perf`, usually paired with a flame-graph renderer:
 
 ```
 $ swift build -c release
-$ perf record -g .build/release/palindrome-bench
+$ perf record -g .build/release/slug-bench
 $ perf report
 # Overhead  Command  Shared Object   Symbol
 # ........  .......  ..............  ...........................................
     31.42%  bench    libswiftCore.so [.] swift_retain
     22.87%  bench    libswiftCore.so [.] swift_release
     11.30%  bench    libswiftCore.so [.] swift_allocObject
-     9.05%  bench    bench           [.] $s4Word12isPalindromeySbSSF
+     9.05%  bench    bench           [.] $s4Slug7slugifyyS2SF
 ```
 
-The symbol names are *mangled*; run them through `swift demangle` to read them. The profile above is illustrative, but typical: a large share of the time is in `swift_retain`, `swift_release`, and `swift_allocObject`, the reference-counting and allocation routines. That's a common finding in Swift code, and it suggests where to look. The tool `valgrind --tool=callgrind` and Google's `heaptrack` work on Linux as well, and `swift-inspect` lets you look at the allocations and metadata of a running Swift process.
+The last symbol is a *mangled* Swift name, which `swift demangle` turns back into `Slug.slugify(Swift.String) -> Swift.String`. The shape of this (illustrative) profile is common in Swift: the biggest costs aren't in our code at all but in the runtime's reference-counting and allocation routines, called on our behalf. That's a strong hint to look at how the code creates and copies values. Other useful Linux tools include `valgrind --tool=callgrind`, `heaptrack` for allocation profiling, and `swift-inspect` for examining the heap and metadata of a running Swift process.
 
-Build with optimization (`-c release`), but with debug symbols so the profiler can map addresses to source lines; SwiftPM does this by default. Profile a realistic workload, not a toy.
+Profile an optimized build with debug information, which SwiftPM's release configuration includes by default, so that the profiler can map machine code back to source lines. And profile a realistic workload: a profile of a toy input mostly measures startup.
 
 ### 11.5.1. Common Culprits
 
-A few patterns recur in Swift profiles, and are worth knowing about before you start.
+Some causes of poor performance turn up in Swift profiles again and again. Knowing them in advance makes profiles easier to read.
 
-*Excess reference counting.* Every copy of a class reference, or a value containing one, such as a `String`, an array, or a closure, may involve an atomic increment and decrement. Passing values as `borrowing` or `consuming` parameters (Swift 5.9) can eliminate some of it, as can using value types containing no references, and avoiding unnecessary copies in tight loops.
+*Retain/release traffic.* Copying a value that contains a reference (a class instance, a `String`, an array, a closure) usually means atomically incrementing a reference count, and later decrementing it. In hot loops, this adds up. `borrowing` and `consuming` parameter modifiers, value types without references, and avoiding needless copies all help.
 
-*Existentials and dynamic dispatch.* Calling a method through `any Protocol` is an indirect call through a witness table, can't be inlined, and may allocate if the value doesn't fit in the existential's inline buffer. Generic code (`some Protocol`) that is specialized by the optimizer avoids all of this.
+*Existentials.* A call through `any SomeProtocol` goes through a table lookup, can't be inlined, and may involve boxing a large value on the heap. Generics (`some SomeProtocol`, or an explicit type parameter) give the optimizer a concrete type to specialize for.
 
-*Unspecialized generics.* When generic code is called across a module boundary without `@inlinable`, the optimizer can't specialize it, and it runs the slow path, passing around type metadata. If a profile shows generic functions with names like `swift_getGenericMetadata` or `swift_conformsToProtocol`, that's the symptom.
+*Unspecialized generics.* A generic function in another module can be specialized for your types only if its body is visible to the optimizer, which requires `@inlinable`. Otherwise it runs a general version that consults type metadata at run time. Profile entries such as `swift_getGenericMetadata` and `swift_conformsToProtocol` are the telltale signs.
 
-*Strings.* Character-based string processing is more expensive than byte processing, because it must find grapheme cluster boundaries. For ASCII-oriented data, working with the `utf8` view can be many times faster, as we noted in Section 3.5.
+*Character-level string processing.* Iterating over a `String`'s `Character`s requires finding grapheme-cluster boundaries, which is real work. For ASCII-heavy data, the `utf8` view can be many times faster (Section 3.5).
 
-*Copy-on-write surprises.* A mutation of an array that isn't uniquely referenced silently copies the whole buffer. The classic way this happens is holding a second reference to the array, for example in a local `let` that's still in scope, or in a closure, while you mutate it in a loop, turning an O(*n*) loop into O(*n*²).
+*Accidental copies.* A copy-on-write collection that's mutated while some other reference to its storage exists gets copied in full. If that happens inside a loop, a linear algorithm silently becomes quadratic. The usual cause is a leftover second reference: a local copy still in scope, or a capture in a closure.
 
-*Blocking in async code.* As we saw in Section 9.8, a blocking call inside a task occupies one of a small number of threads. A profile showing threads idle in `read` or `sleep` while tasks queue up is the sign.
+*Blocking in tasks.* A blocking call inside a task holds one of the thread pool's few threads (Section 9.8). A profile in which threads sit idle in `read` or `usleep` while tasks wait to run points to this.
 
-**Exercise 11.10:** Profile the `charcount` program of Section 4.3 with a large input file. What dominates? Rewrite the hot loop to use the `utf8` view for ASCII-only input and measure the difference.
+**Exercise 11.10:** Profile the `charcount` program of Section 4.3 on a large file. Where does the time go? Add a fast path for ASCII input that works on the `utf8` view, and measure the gain.
 
-**Exercise 11.11:** Construct a program that unintentionally copies an array on every iteration of a loop, as described in the copy-on-write paragraph above. Find it with a profiler, then fix it.
+**Exercise 11.11:** Write a loop that accidentally copies an array on every iteration, as described under "Accidental copies" above. Confirm with a profiler that the copying dominates, then fix it.
 
 ## 11.6. Documentation Examples
 
-The last kind of test we'll discuss is an *example*. In Go, an `Example` function in a test file is compiled, run, and (if it has an `// Output:` comment) verified, and it's also shown in the generated documentation. Swift has no direct counterpart in the test runner, but the documentation system fills the gap.
+Some of the most useful documentation consists of examples: a few lines showing a call and its result communicate faster than paragraphs of description. The trouble with examples in documentation is that nothing checks them, so they drift out of date as the code changes. Swift's tools offer a few ways to keep them honest.
 
-*DocC* documentation, introduced in Section 10.7, supports Swift code blocks in doc comments, which are shown with syntax highlighting in the generated site:
+DocC (Section 10.7) renders code blocks in documentation comments with syntax highlighting:
 
 ```swift
-/// Reports whether `s` reads the same forward and backward,
-/// ignoring punctuation, spaces, and case.
+/// Converts a title to a URL slug.
 ///
 /// ```swift
-/// isPalindrome("A man, a plan, a canal: Panama")  // true
-/// isPalindrome("palindrome")  // false
+/// slugify("Hello, World!")  // "hello-world"
+/// slugify("Crème brûlée")  // "creme-brulee"
 /// ```
-public func isPalindrome(_ s: String) -> Bool { ... }
+public func slugify(_ title: String) -> String { ... }
 ```
 
-Examples like this serve as documentation, and, being text, can go out of date. To keep them honest, DocC *tutorials* and *articles* built with the `swift-docc` toolchain compile code listings that are stored as separate files in the documentation catalog. Another approach is to mirror each important documentation example in a real test. Swift Testing makes that cheap, and the tests can be named for what they demonstrate:
+DocC doesn't run code in comments. It can, however, include code from separate source files in tutorials and articles, and those files are compiled, so at least they can't fall out of date with the API. For behavior, the practical approach is to mirror each documented example in a test that bears its name:
 
 ```swift
-@Test("isPalindrome ignores punctuation and case")
-func example() {
-    #expect(isPalindrome("A man, a plan, a canal: Panama"))
-    #expect(!isPalindrome("palindrome"))
+@Test("Documented examples of slugify")
+func documentedExamples() {
+    #expect(slugify("Hello, World!") == "hello-world")
+    #expect(slugify("Crème brûlée") == "creme-brulee")
 }
 ```
 
-The `swift-snapshot-testing` package takes a different approach: it records the output of a function the first time it runs and compares later runs against the recording. Snapshot tests are most useful for large, structured outputs like rendered HTML, a pretty-printed syntax tree, or a command's help text, where writing the expected value by hand would be tedious. Review the recorded snapshot as carefully as you would any other code, since the test is only as good as the first output you accepted.
+If someone changes the behavior, the test fails and points at the example that needs updating.
 
-Documentation examples have three purposes. Primarily, they serve as documentation: an example can be a more succinct or intuitive way to convey the behavior of a library function than its prose description, especially when used as a reminder or quick reference. Second, they are verified, either by the compiler as part of the build or by a test. And third, they are hands-on experiments: the Swift REPL (`swift repl`), playgrounds in Xcode, and the Swift Playground app on iPad all let readers copy an example and try changing it, and so learn the language by doing.
+A related technique is *snapshot testing*, offered by packages such as `swift-snapshot-testing`. A snapshot test records a function's output the first time it runs and compares future runs with that recording. It's well suited to large outputs, such as rendered HTML, pretty-printed syntax trees, or a command's help text, where writing the expected value by hand would be impractical. The first snapshot deserves careful review, because from then on the test will defend it, right or wrong.
 
-**Exercise 11.12:** Add documentation comments with examples to the `IntSet` of Section 6.5, and write tests that verify each example.
+Examples in documentation, then, serve three purposes: they explain, faster than prose can; they specify, when tests keep them accurate; and they invite experimentation. A reader can paste an example into the Swift REPL or a playground, change it, and see what happens, which is how many people learn a language best.
 
-**Exercise 11.13:** Write a snapshot-style test for the `Expr` pretty-printer of Exercise 7.13, storing the expected output in a file alongside the test. How would you make updating the stored snapshots deliberate rather than automatic?
+**Exercise 11.12:** Add documentation comments with examples to the `IntSet` of Section 6.5, and a test for each example.
+
+**Exercise 11.13:** Write a snapshot-style test for the `Expr` pretty-printer of Exercise 7.13 that stores the expected output in a file next to the test. Make updating the stored file a deliberate act, for instance by requiring an environment variable to be set.

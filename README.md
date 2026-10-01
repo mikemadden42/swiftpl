@@ -140,7 +140,7 @@ Example programs carry a label such as `swiftpl/ch1/helloworld`, which names the
 **[13. Low-Level Programming](ch13-low-level.md)**
 - 13.1 `MemoryLayout`: Size, Alignment, Stride, and Offset
 - 13.2 Unsafe Pointers
-- 13.3 Example: Deep Equivalence
+- 13.3 Example: Reading a Binary File Header
 - 13.4 Calling C Code with Direct Interoperation
 - 13.5 Another Word of Caution
 

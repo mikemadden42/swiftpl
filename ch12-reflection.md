@@ -1,44 +1,45 @@
 # 12. Reflection
 
-Swift provides a mechanism to update variables and inspect their values at run time, to call their methods, and to apply the operations intrinsic to their representation, all without knowing their types at compile time. This mechanism is called *reflection*. Reflection also lets us treat types themselves as first-class values.
+Most of the time, a Swift program knows the types of its values. The compiler checks every operation against those types and generates code specialized for them, and that's a large part of why Swift programs are both safe and fast. Occasionally, though, a program has to work with values whose types it doesn't know in advance: a debugger showing the contents of a variable, a logger recording arbitrary values, a serializer writing any type to disk. For that, a language needs *reflection*, the ability of a program to examine the structure of its own values while it runs.
 
-Swift's reflection is deliberately more modest than Go's. Swift's designers favor static guarantees, and the language is compiled with aggressive whole-program optimization that benefits from knowing types in advance, so Swift reflection is mostly *read-only*: you can inspect a value's structure with `Mirror`, but you can't, in general, discover methods by name, call them, or assign to arbitrary fields. What Swift offers in place of general run-time reflection are *compile-time* mechanisms that do the same jobs more safely: protocols with synthesized conformances like `Codable`, key paths, generics, and macros. In this chapter, we'll explore the run-time features that exist, and see how Swift programmers get the effects that Go programmers get from reflection by other means.
+Swift's reflection is intentionally limited. It can *look*: given any value, the standard library's `Mirror` type reports what kind of thing it is and what it contains. But it can't, in general, *touch*: there's no way to set a property by name, enumerate a type's methods, or call a method chosen at run time. That's a deliberate trade. The less a program can do behind the compiler's back, the more the compiler can check and optimize. For the jobs that other languages do with full run-time reflection, Swift offers compile-time machinery instead: synthesized protocol conformances such as `Codable`, key paths, generics, and macros.
+
+This chapter covers both sides. We'll use `Mirror` to build a value inspector and a serializer, see why it can't build a *deserializer*, and then build one anyway with `Decodable`. Along the way we'll look at key paths as a typed alternative to setting properties by name, and at macros, which let a library generate code from a type's declaration at build time.
 
 ## 12.1. Why Reflection?
 
-Sometimes we need to write a function capable of dealing uniformly with values of types that don't satisfy a common protocol, don't have a known representation, or don't exist at the time we design the function. Or even all three.
+Imagine you're writing a structured logging library. Callers hand it values of their own types, perhaps a `Request`, an `Order`, or an `[Int: String]`, and the library should record each value as a tree of named fields, so that a log viewer can search and filter them.
 
-A familiar example is the formatting logic within `print`, which can print an arbitrary value of any type, even a user-defined one. Let's try to implement a function like it, called `format`, which takes an `Any` and returns a string. We might begin with a type switch to test whether the value has a primitive type (`Int`, `Bool`, `String`, and so on), and define a case for each:
+How can the library possibly do that? It can't know the caller's types. It could require every logged type to conform to some protocol of its own, but that pushes work onto every user and fails for types from third-party modules. It could try casting to the types it knows:
 
 ```swift
-func format(_ value: Any) -> String {
+func record(_ value: Any) -> String {
     switch value {
     case let x as Int: return String(x)
     case let x as Bool: return x ? "true" : "false"
     case let x as String: return x.debugDescription
     // ...
     default:
-        // array, dictionary, struct, class, enum, ...???
+        // a struct? an enum? an array of who knows what?
+        fatalError("can't record \(type(of: value))")
     }
 }
 ```
 
-But how do we deal with other types, like `[String]`, `[String: Int]`, or `Point`? We could add more cases, but the number of such types is infinite. And how would we deal with named types, like `Celsius`? If the type switch had a case for `Double`, it wouldn't match `Celsius` even though its underlying representation is a `Double`, since `Celsius` is a distinct type. And user-defined types like `Point`, `Employee`, or `Movie` can't be known in advance by a library at all.
+But that list can never end. Arrays and dictionaries can hold any element type, and the space of user-defined structs and enums is unbounded. What the library needs is a way to ask a value: *what are you made of?*
 
-Without a way to inspect the representation of values of unknown types, we quickly get stuck. What we need is reflection.
-
-Of course, the Swift standard library does solve this problem, and it solves it in two layers. The first is *protocols*: types that want custom output conform to `CustomStringConvertible` or `CustomDebugStringConvertible`, and `print` uses them, as we saw in Section 7.12. The second, for types that don't conform, is `Mirror`, which `print` falls back on, and which is the topic of this chapter.
+The standard library faces the same problem every time `print` is given a value whose type has no `description`, and it answers in the same way that we will. First it checks for protocols the type may have adopted to describe itself (`CustomStringConvertible` and `CustomDebugStringConvertible`, as Section 7.12 showed). If there are none, it falls back on `Mirror`.
 
 ## 12.2. `Mirror`
 
-A `Mirror` is a value that describes the structure of another value. You create one by passing the value to the initializer `Mirror(reflecting:)`, and then ask it questions. Its most important properties are:
+A `Mirror` describes the structure of a single value. Create one with `Mirror(reflecting:)` and then ask it about the value:
 
-- `subjectType`, the type of the value being reflected, as a `Any.Type`.
-- `displayStyle`, an optional enum that says what kind of thing the value is: `.struct`, `.class`, `.enum`, `.tuple`, `.optional`, `.collection`, `.dictionary`, `.set`, or `.foreignReference`.
-- `children`, a collection of `(label: String?, value: Any)` pairs, one for each stored property, element, or associated value.
-- `superclassMirror`, a mirror of the superclass, for classes.
+- `subjectType` is the value's dynamic type.
+- `displayStyle` says what kind of value it is: `.struct`, `.class`, `.enum`, `.tuple`, `.optional`, `.collection`, `.dictionary`, `.set`, or `.foreignReference`. It's `nil` for values the standard library treats as indivisible, such as numbers and strings.
+- `children` is a collection of `(label: String?, value: Any)` pairs, one for each stored property, element, or associated value.
+- `superclassMirror` reflects the superclass part of a class instance.
 
-Here's an example:
+For example:
 
 ```swift
 // swiftpl/ch12/mirror
@@ -66,9 +67,9 @@ for child in m.children {
 // label = Optional("unit")
 ```
 
-Each child's `value` has the static type `Any`, so the function that deals with it must itself discriminate with a cast, or build another mirror. That recursion is the core of nearly everything built on `Mirror`.
+Every child's value comes back typed as `Any`. To go deeper, you cast it or make another mirror of it, so code built on `Mirror` is almost always recursive.
 
-The mirrors of the other kinds of values show what the `children` of each look like:
+The shape of `children` depends on the display style:
 
 ```swift
 print(Array(Mirror(reflecting: [10, 20]).children).map { "\($0.label ?? "nil"): \($0.value)" })
@@ -84,11 +85,9 @@ print(e.displayStyle!)  // enum
 print(e.children.first!.label!, e.children.first!.value)  // "circle (radius: 2.0)"
 ```
 
-For an enum, there is at most one child: the case name is its label, and its value is the associated value (or tuple of associated values). A case with no associated values has no children, so the case name can't be found from the mirror; you'd print the enum itself, which finds it by other means.
+Collections and sets have one unlabeled child per element. A tuple's children carry its labels, if it has any. An enum value has at most one child, labeled with the case name and holding the associated value (or a tuple of them); a case with no associated values has no children at all. A dictionary's children are `(key:value:)` pairs. An optional has one child if it holds a value and none if it's `nil`.
 
-For a dictionary, the `children` are key/value *pairs*, as `(key: ..., value: ...)` tuples; for a set, the elements; for an optional, either no children (`nil`) or one (the wrapped value).
-
-Notice what `Mirror` *doesn't* offer. It can't change a value, can't look up a child by name except by scanning `children`, can't list methods or call them, and can't see computed properties, static members, or the initializers of the type. It shows only a snapshot of *stored* state, which the type's author may even have customized. A type can choose how it appears to a mirror by conforming to `CustomReflectable` and returning its own `Mirror`, for example to hide private fields or to expose a computed summary:
+It's just as important to know what a mirror *can't* tell you. It shows stored state only, so it omits computed properties, static members, initializers, and methods. It's read-only: there's no way to change a value through it. And it shows what the type's author allows. A type can supply its own mirror by conforming to `CustomReflectable`, to hide sensitive or irrelevant fields or to present a simpler logical structure:
 
 ```swift
 struct Account: CustomReflectable {
@@ -101,16 +100,16 @@ struct Account: CustomReflectable {
 }
 ```
 
-That fits the rest of Swift's design: reflection is a tool for debugging, display, and serialization of data, not a back door around encapsulation. (Mirror *can* read `private` stored properties, which is why types with secrets customize it. Treat it as a debugging window, and don't rely on private details for logic.)
+Without such a customization, a mirror *does* show private stored properties. Treat that as a debugging aid, not an API: private properties are private precisely so that they can change, and code that depends on them will break when they do.
 
-## 12.3. `display`, a Recursive Value Printer
+## 12.3. `inspect`, a Recursive Value Printer
 
-Let's use `Mirror` to write a function that prints the structure of any value, much like Swift's `dump` function (which does the same job and is built into the standard library). Our function, `display`, takes an arbitrary value and prints one line for each leaf, labeled with the path used to reach it. This kind of function is useful for debugging, and it illustrates the recursion that underlies every reflective traversal.
+Our first reflective program prints every leaf of a value's structure on its own line, together with the path that leads to it, like `order.items[2].price`. The standard library's `dump` function prints a similar tree. Writing our own shows how such a traversal works.
 
 ```swift
-// swiftpl/ch12/display
-func display(_ name: String, _ value: Any) {
-    print("display \(name) (\(type(of: value))):")
+// swiftpl/ch12/inspect
+func inspect(_ name: String, _ value: Any) {
+    print("inspect \(name) (\(type(of: value))):")
     walk(name, value)
 }
 
@@ -159,49 +158,47 @@ func format(_ value: Any) -> String {
 }
 ```
 
-The function dispatches on the *kind* of value, as reported by `displayStyle`. Aggregates (structs, classes, and tuples) are walked field by field, with the field name appended to the path. Collections and sets are walked by index. For a dictionary, each child is a pair whose own mirror has two children, key and value. An optional is either empty or has one child, and an enum with a payload is walked through the payload. Everything else is a leaf, and printed using `format`, which handles the strings and characters that deserve quoting.
+`walk` asks each value what kind it is and handles each kind by extending the path appropriately: a property name for structs, classes, and tuples; a subscript for arrays and sets; the formatted key for dictionaries; a `!` for an unwrapped optional; the case name for an enum with a payload. Anything with no display style (a number, a string, a Boolean) is a leaf, and is printed. `format` quotes strings and characters, so that a leaf containing spaces or quotation marks can't be misread.
 
-(Strings are displayed as leaves because their `displayStyle` is `nil`. A `String` is a collection of characters, but its mirror has no children; the same holds for `Int`, `Double`, `Bool`, and most other basic types.)
-
-Let's apply `display` to some values:
+Here it is applied to a recipe:
 
 ```swift
-struct Movie {
+struct Recipe {
     var title: String
-    var year: Int
-    var color: Bool
-    var actors: [String]
-    var oscars: [String: Int]
-    var sequel: Movie? { nil }  // computed: not shown
+    var servings: Int
+    var vegetarian: Bool
+    var steps: [String]
+    var ingredients: [String: String]  // ingredient: quantity
+    var doubled: Int { servings * 2 }  // computed: not shown
 }
 
-let strangelove = Movie(
-    title: "Dr. Strangelove", year: 1964, color: false,
-    actors: ["Peter Sellers", "George C. Scott"],
-    oscars: ["Best Picture": 0, "Best Actor": 0])
-display("strangelove", strangelove)
+let shakshuka = Recipe(
+    title: "Shakshuka", servings: 4, vegetarian: true,
+    steps: ["Soften onions and peppers", "Add tomatoes and spices", "Poach the eggs"],
+    ingredients: ["eggs": "6", "tomatoes": "800 g", "onion": "1"])
+inspect("shakshuka", shakshuka)
 ```
 
-This prints:
-
 ```
-display strangelove (Movie):
-strangelove.title = "Dr. Strangelove"
-strangelove.year = 1964
-strangelove.color = false
-strangelove.actors[0] = "Peter Sellers"
-strangelove.actors[1] = "George C. Scott"
-strangelove.oscars["Best Picture"] = 0
-strangelove.oscars["Best Actor"] = 0
+inspect shakshuka (Recipe):
+shakshuka.title = "Shakshuka"
+shakshuka.servings = 4
+shakshuka.vegetarian = true
+shakshuka.steps[0] = "Soften onions and peppers"
+shakshuka.steps[1] = "Add tomatoes and spices"
+shakshuka.steps[2] = "Poach the eggs"
+shakshuka.ingredients["eggs"] = "6"
+shakshuka.ingredients["tomatoes"] = "800 g"
+shakshuka.ingredients["onion"] = "1"
 ```
 
-(The dictionary order may differ from run to run.) Notice that the computed property `sequel` doesn't appear, because it isn't stored state.
+The dictionary lines may come out in a different order on each run. The computed property `doubled` is absent, as expected.
 
-Reflection works on values from the standard library too: `display("range", 1...3)` shows the range's `lowerBound` and `upperBound`. But it also reveals *implementation* details. The stored properties of a type like `Date` are private, are not part of its API, and nothing promises they'll look the same in the next release. That's one more reason to prefer protocols for anything the program's logic depends on.
+`inspect` works on standard library types too: `inspect("r", 1...3)` shows a range's `lowerBound` and `upperBound`. But for many library types, what you'll see are private implementation details. The stored properties of `Date` or `URL` aren't part of their APIs and may differ between platforms and releases. A program's *logic* should never depend on them.
 
 ### 12.3.1. Cycles
 
-`display` works for any value that is a tree, but class instances can form cycles (a doubly linked list or a graph), and our function would then run forever, or until it overflowed the stack. `dump`, the standard library's version of this function, avoids that by tracking the objects it has already visited. We can do the same, using `ObjectIdentifier`, which is a hashable identity for any class instance:
+Struct and enum values can't contain themselves, so any value built from them is a tree, and `walk` will eventually reach the leaves. Class instances are different. Two objects can refer to each other, directly or through a chain, and following such a cycle would recurse until the stack overflowed. `dump` guards against this by remembering which objects it has already printed. We can do the same with `ObjectIdentifier`, a `Hashable` value that identifies a class instance:
 
 ```swift
 private func walk(_ path: String, _ value: Any, _ visited: inout Set<ObjectIdentifier>) {
@@ -209,7 +206,7 @@ private func walk(_ path: String, _ value: Any, _ visited: inout Set<ObjectIdent
     if m.displayStyle == .class {
         let id = ObjectIdentifier(value as AnyObject)
         guard visited.insert(id).inserted else {
-            print("\(path) = (cycle)")
+            print("\(path) = (already shown)")
             return
         }
     }
@@ -217,29 +214,30 @@ private func walk(_ path: String, _ value: Any, _ visited: inout Set<ObjectIdent
 }
 ```
 
-Go's `Display` function of the same name in its book has the same problem for pointers and maps, and the same remedy. Swift's value types (structs, enums, arrays, dictionaries) can't form cycles, so only classes need to be tracked.
+Only class instances need tracking, since only they have identity.
 
-**Exercise 12.1:** Extend `display` so that it also shows the superclass fields of a class instance, using `superclassMirror`.
+**Exercise 12.1:** Make `inspect` include the fields that a class instance inherits from its superclasses, using `superclassMirror`.
 
-**Exercise 12.2:** Add the cycle-detection logic above and test it with a doubly linked list.
+**Exercise 12.2:** Add cycle detection to `inspect` and test it on a doubly linked list.
 
-**Exercise 12.3:** Extend `display` to produce the output as JSON, where dictionary keys that are not strings are rendered as strings. How does this compare to the output of a real `JSONEncoder`?
+**Exercise 12.3:** Make `inspect` emit JSON instead of path lines, turning non-string dictionary keys into strings. Compare its output with `JSONEncoder` on a `Codable` type. Where do they differ, and why?
 
 ## 12.4. Example: Encoding S-Expressions
 
-`display` is just a debugging routine, but it's not far from being an *encoder*. In this section, we'll write one: a function that encodes an arbitrary Swift value into *S-expression* notation, the syntax of Lisp. S-expressions are an elegantly simple format: they have atoms (numbers, strings, symbols) and lists, and nothing else. Here's the encoding we'll use for each type:
+With a little more structure in its output, `inspect` would be a serializer. Let's build one that writes any Swift value as an *S-expression*, the parenthesized notation of Lisp. S-expressions have only two kinds of things, atoms and lists, which makes them about the simplest structured format there is and a good vehicle for the technique. We'll encode Swift values like this:
 
 ```
 42                                   integer
-"hello"                              string (a Go-style quoted literal)
-t / nil                              booleans (true is t, false is nil)
+3.5                                  floating-point number
+"hello"                              string, with Swift-style escapes
+t / nil                              true / false
 (1 2 3)                              array or set
 ((key1 value1) (key2 value2))        dictionary
-((Name "Ada") (Born 1815))           struct, as a list of (field value) pairs
-(Case payload)                       enum
+((title "Soup") (servings 2))        struct or class, as (field value) pairs
+(case payload)                       enum case with an associated value
 ```
 
-The encoder takes any `Any` and returns a `String`, throwing an error for types it can't handle:
+The encoder accepts an `Any`, returns a `String`, and throws for anything it doesn't know how to represent:
 
 ```swift
 // swiftpl/ch12/sexpr
@@ -330,95 +328,72 @@ private func encode(_ value: Any, into out: inout String, indent: Int) throws {
 }
 ```
 
-Compare this to `display`. The structure is the same, a walk guided by `displayStyle`, but now each case produces text in a defined syntax, with an indentation scheme that lines up the elements of lists under each other. The first `switch` handles the atoms using *protocol* casts: `any BinaryInteger` matches every integer type, and `any BinaryFloatingPoint` every floating-point type, so we needn't enumerate `Int8`, `UInt32`, `Float`, and the rest. (This is the same technique as in Section 7.12, the sensible use of a cast to a protocol.)
+The encoder is `walk` with output rules. Atoms are handled first, by casting. Here the casts are to *protocols*: `any BinaryInteger` matches all ten integer types and `any BinaryFloatingPoint` every floating-point type, so one case covers each family (the same use of protocol casts as in Section 7.12). Everything else goes through a mirror. The `indent` parameter tracks the column where the current list began, so that elements after the first line up under it. The arithmetic for a struct field, `indent + name.count + 3`, accounts for the two parentheses and the space in `(name `.
 
-Let's marshal the `Movie` structure of the previous section, adapted to have a nicer set of fields:
+Encoding our recipe, with one more field added, shows the layout:
 
 ```swift
-struct Movie {
+struct Recipe {
     var title: String
-    var subtitle: String
-    var year: Int
-    var color: Bool
-    var actor: [String: String]
-    var oscars: [String]
-    var sequel: String?
+    var servings: Int
+    var vegetarian: Bool
+    var steps: [String]
+    var ingredients: [String: String]
+    var source: String?
 }
 
-let strangelove = Movie(
-    title: "Dr. Strangelove",
-    subtitle: "How I Learned to Stop Worrying and Love the Bomb",
-    year: 1964,
-    color: false,
-    actor: [
-        "Dr. Strangelove": "Peter Sellers",
-        "Grp. Capt. Lionel Mandrake": "Peter Sellers",
-        "Pres. Merkin Muffley": "Peter Sellers",
-        "Gen. Buck Turgidson": "George C. Scott",
-        "Brig. Gen. Jack D. Ripper": "Sterling Hayden",
-        "Maj. T.J. \"King\" Kong": "Slim Pickens",
-    ],
-    oscars: [
-        "Best Actor (Nomin.)",
-        "Best Adapted Screenplay (Nomin.)",
-        "Best Director (Nomin.)",
-        "Best Picture (Nomin.)",
-    ],
-    sequel: nil)
+let shakshuka = Recipe(
+    title: "Shakshuka", servings: 4, vegetarian: true,
+    steps: ["Soften onions and peppers", "Add tomatoes and spices", "Poach the eggs"],
+    ingredients: ["eggs": "6", "tomatoes": "800 g", "onion": "1"],
+    source: nil)
 
-print(try marshal(strangelove))
+print(try marshal(shakshuka))
 ```
 
 ```
-((title "Dr. Strangelove")
- (subtitle "How I Learned to Stop Worrying and Love the Bomb")
- (year 1964)
- (color nil)
- (actor (("Dr. Strangelove" "Peter Sellers")
-         ("Grp. Capt. Lionel Mandrake" "Peter Sellers")
-         ("Pres. Merkin Muffley" "Peter Sellers")
-         ("Gen. Buck Turgidson" "George C. Scott")
-         ("Brig. Gen. Jack D. Ripper" "Sterling Hayden")
-         ("Maj. T.J. \"King\" Kong" "Slim Pickens")))
- (oscars ("Best Actor (Nomin.)"
-          "Best Adapted Screenplay (Nomin.)"
-          "Best Director (Nomin.)"
-          "Best Picture (Nomin.)"))
- (sequel nil))
+((title "Shakshuka")
+ (servings 4)
+ (vegetarian t)
+ (steps ("Soften onions and peppers"
+         "Add tomatoes and spices"
+         "Poach the eggs"))
+ (ingredients (("eggs" "6")
+               ("tomatoes" "800 g")
+               ("onion" "1")))
+ (source nil))
 ```
 
-(Again, the order of the entries in the `actor` dictionary varies from run to run; sort the children first if you want a stable output, as in Exercise 12.5.)
+(As with `inspect`, the dictionary entries may come out in any order. Exercise 12.5 fixes that.)
 
 ### 12.4.1. The Compile-Time Alternative: `Encoder`
 
-The marshaler we wrote shows how reflection works, but it's not how Swift programmers would normally do this job. We discovered in Chapter 4 that `Codable` supports JSON and property lists without any reflection at all. How?
+`marshal` works, and it's a clear illustration of reflection. It's not, however, how Swift libraries normally serialize data. `JSONEncoder` and `PropertyListEncoder` don't use `Mirror` at all.
 
-The answer is that the compiler *generates code*. When a type declares `Codable` conformance, the compiler writes, at compile time, an `encode(to:)` method that calls `container.encode(...)` for each stored property by name, with proper types. There's no run-time inspection of layouts, and so no `Any` and no casts, and the generated code is as fast as if you'd written it by hand. The `Encoder` protocol that receives these calls is format-neutral. Anyone who writes a type conforming to `Encoder` (a few hundred lines for a simple format) gets an encoder for *every* `Encodable` type, with the same customization points (`CodingKeys`, custom `encode(to:)`) that JSON has.
+Instead, they rely on code the compiler writes. When a type declares that it conforms to `Encodable`, the compiler synthesizes an `encode(to:)` method that walks the type's stored properties *at compile time*, calling `encode(_:forKey:)` on an encoding container for each one, with its static type. An encoder (a type conforming to the `Encoder` protocol) receives those calls and turns them into its format. The encoder never needs to discover a type's structure, because the type describes itself.
 
-The advantages over `Mirror`-based encoding are substantial:
+That arrangement has real advantages over reflection:
 
-- **Speed.** No type-erased `Any` boxing, no run-time metadata walking.
-- **Type safety.** The encoding depends on declared types, not on whatever happens to be inside an `Any`.
-- **Control.** A type can customize its encoding by providing its own `encode(to:)`, rename keys with `CodingKeys`, or skip properties, and these customizations apply to *every* format.
-- **Decoding.** `Decodable` makes the inverse possible, constructing values of types the library has never seen. As we'll see in Section 12.6, that's the great limitation of `Mirror`.
+- **It's faster.** There's no `Any` boxing, no metadata walking, and no casts; the generated code is what you'd write by hand.
+- **It's typed.** What gets encoded follows the declared types, not whatever happens to be inside an `Any`.
+- **It's customizable.** A type can rename keys with `CodingKeys`, omit properties, or take over entirely with its own `encode(to:)`, and the customization applies to every format.
+- **It runs in both directions.** `Decodable` lets a library *create* values of types it has never seen, which, as the next sections show, `Mirror` cannot do.
 
-The price is that a type must declare its conformance (or have it declared in an extension) in advance. A value of a type that isn't `Codable` can't be encoded this way, whereas `Mirror` can look at anything.
+The cost is that conformance must be declared. A type that isn't `Codable` can't be encoded that way, while `Mirror` can look at anything. Both tools have their place; for a serialization format of your own, an `Encoder` is the better design (Exercise 12.6).
 
-For that reason, the S-expression encoder is better written as an `Encoder`. A faithful version is Exercise 12.6. We continue with the `Mirror` version here, because it's the clearest illustration of reflection, and because it's a closer analogue of the original.
+**Exercise 12.4:** Extend `marshal` to encode tuples, as lists of their elements, and test it on optionals, nested collections, and enums with and without payloads.
 
-**Exercise 12.4:** Add support for floating-point formatting, tuples, and `nil` optionals in the S-expression marshaler, and test it on a variety of values.
+**Exercise 12.5:** Sort dictionary entries by key so that the output is deterministic. With only an `Any` in hand, how can you tell whether the keys are `Comparable`?
 
-**Exercise 12.5:** Sort the entries of dictionaries by key so that the output is stable. Which type constraint do you need to put on the dictionary's key type, given that you only have an `Any`?
+**Exercise 12.6:** Write a type conforming to `Encoder` that produces S-expressions, so that any `Encodable` value can be serialized without reflection. Compare its output with `marshal` on a `Codable` version of `Recipe`.
 
-**Exercise 12.6:** Implement a type conforming to `Encoder` that produces S-expressions, so that any `Encodable` value can be written with it. Compare its output with the `Mirror`-based marshaler for the `Movie` type, once you've made `Movie` conform to `Codable`.
-
-**Exercise 12.7:** Adapt the encoder to produce JSON. Do you reproduce `JSONEncoder`'s output for the types in Section 4.5? What cases does `Mirror` get wrong that `Codable` gets right?
+**Exercise 12.7:** Make a JSON version of `marshal`. For the types of Section 4.5, does it agree with `JSONEncoder`? Identify a case where reflection produces the wrong answer and `Codable` the right one.
 
 ## 12.5. Setting Values with Key Paths
 
-So far, we've used reflection only to *inspect* values. Go's reflection can also *modify* them, through `reflect.Value`'s `Set` methods. `Mirror` can't do that, and Swift has no general counterpart. Swift's answer to "I want to read or write a property chosen at run time" is the *key path*, which we introduced in Section 6.4.
+Reading arbitrary properties is half of what full reflection offers; the other half is *writing* them, chosen by name at run time. `Mirror` can't do that. When a Swift program needs to read or write a property chosen at run time, it uses a *key path* (Section 6.4) instead.
 
-A key path is a value that describes a path to a property. It's checked by the compiler, so you can't make one for a property that doesn't exist, and it has a precise type: `KeyPath<Root, Value>` for read-only access, `WritableKeyPath<Root, Value>` for properties of a mutable value, and `ReferenceWritableKeyPath<Root, Value>` for properties of a class instance.
+A key path is a reference to a property that isn't yet tied to an instance. It's checked when it's written, so it can't name a property that doesn't exist, and its type records both the root type and the property type: `KeyPath<Root, Value>` is read-only, `WritableKeyPath<Root, Value>` can write through a mutable value, and `ReferenceWritableKeyPath<Root, Value>` can write through a class reference.
 
 ```swift
 // swiftpl/ch12/keypath
@@ -434,7 +409,7 @@ p[keyPath: age] += 1
 print(p[keyPath: age])  // "37"
 ```
 
-The point is that a key path is a *value*, which can be passed to functions, stored in tables, and chosen at run time. For example, this function sets a field to a value across an array of records:
+Because a key path is an ordinary value, it can be passed around and stored, which lets one function operate on whichever property the caller chooses:
 
 ```swift
 func setAll<T, V>(_ items: inout [T], _ keyPath: WritableKeyPath<T, V>, to value: V) {
@@ -447,7 +422,7 @@ var people = [Person(name: "Ada", age: 36), Person(name: "Alan", age: 41)]
 setAll(&people, \.age, to: 0)
 ```
 
-and a *table* of key paths lets us choose a property by name at run time, like Go's `FieldByName`, but with the choice of properties fixed (and checked) at compile time:
+To choose a property by *name*, put key paths in a dictionary. The set of accessible properties is fixed when the table is written, but which one is used can be decided at run time:
 
 ```swift
 let fields: [String: PartialKeyPath<Person>] = [
@@ -462,13 +437,13 @@ func get(_ name: String, from p: Person) -> Any? {
 print(get("age", from: p) as Any)  // "Optional(37)"
 ```
 
-`PartialKeyPath<Root>` and `AnyKeyPath` are type-erased forms that allow keys of different value types to be stored in one collection; reading through them gives an `Any?`, and writing requires a cast to the concrete `WritableKeyPath` type.
+`PartialKeyPath<Root>` erases the property type so that paths to properties of different types can share a dictionary; reading through one yields `Any`. (`AnyKeyPath` erases the root type as well.) Writing requires casting back to a `WritableKeyPath` of the right types.
 
-Although the *table* is hand-written, this is exactly the mechanism that powers dynamic-looking APIs in Swift: SwiftUI's property bindings, the `@Observable` machinery, `sorted(using: KeyPathComparator(\.age))`, the `\.name` shorthand for closures, and Swift Data's predicates and sort descriptors. Because key paths are statically typed, mistakes like `\.agee` or assigning a string to an `Int` property are compile-time errors.
+Key paths are everywhere in modern Swift APIs, often in places that look dynamic at first glance: `\.name` passed where a closure is expected, `sorted(using: KeyPathComparator(\.age))`, SwiftUI bindings, the change tracking of `@Observable`, and SwiftData predicates. In each case, the compiler has checked the path.
 
 ### 12.5.1. Setting Values by Name from Text
 
-Parsing a text format, such as command-line flags or an INI file, into the fields of a configuration struct is a classic use of Go's `reflect.Value.Set`. In Swift, we register the key paths and write a conversion function for each type that can be set:
+A common task is filling in a configuration struct from text: a config file, environment variables, command-line `key=value` pairs. Each value arrives as a string with a name attached and has to be converted to the right type and stored in the right property. A table of key paths, plus a little generic code, does the job with full type checking:
 
 ```swift
 // swiftpl/ch12/populate
@@ -512,15 +487,15 @@ for (key, text) in [("port", "9000"), ("debug", "true"), ("ratio", "x")] {
 print(config)  // Config(host: "localhost", port: 9000, debug: true, ratio: 1.0)
 ```
 
-The generic initializer takes a key path to a property of *any* type `V` that conforms to `LosslessStringConvertible`, a standard protocol for types that can be converted to and from strings (`Int`, `Double`, `Bool`, `String`, and many others), and captures it in a closure. This does what Go's `populate` function does using reflection and a type switch on `Kind`, but with the types checked by the compiler. The cost is that each field must be listed once. The macro we'll meet in Section 12.8 can eliminate even that.
+`Setter`'s generic initializer accepts a key path to a property of any type `V` that conforms to `LosslessStringConvertible`, the standard protocol for types that can be created from their own string form, which `Int`, `Double`, `Bool`, `String`, and many others adopt. The initializer wraps the key path and the conversion in a closure, so that setters for properties of different types can live in one dictionary. Invalid text is rejected at run time; an invalid property name or a type mismatch is rejected at compile time. The one chore left is listing each property once, which a macro (Section 12.8) can take over.
 
 ## 12.6. Example: Decoding S-Expressions
 
-We now turn to decoding, the inverse of encoding. In Go, decoding requires `reflect.Value`'s ability to *create* and *set* values of types not known when the decoder was written. This is exactly what `Mirror` can't do, since a mirror can only read. How, then, can a Swift program decode a format of its own into arbitrary types? Via `Decodable`, the compile-time-generated protocol conformance, as we saw in Section 4.5.
+Writing values out was a job for `Mirror`. Reading them back is not. To decode, a program must *create* a value of a type chosen by its caller and fill in its properties, and a mirror has no way to create anything or to write to anything. Run-time reflection is a dead end here.
 
-To implement a decoder for S-expressions, we write a type that conforms to the `Decoder` protocol. When a `Decodable` type's synthesized `init(from:)` runs, it asks the decoder for a *container* and then asks the container for values of specific types by key: `try container.decode(Int.self, forKey: .year)`. Our job is to answer those requests from the S-expression text. The compiler-generated code does all the field handling for us.
+`Decodable` takes the problem from the other side. Just as the compiler synthesizes `encode(to:)`, it synthesizes an initializer, `init(from:)`, that knows how to build the type: it asks a *decoder* for a container, then asks the container for each stored property by key and type, as in `container.decode(Int.self, forKey: .servings)`. A decoder for a new format only has to answer those questions. It never needs to know what type it's building.
 
-We start with a lexer and a parser that turn text into a simple tree:
+Our decoder starts by parsing text into a tree:
 
 ```swift
 // swiftpl/ch12/sexprdecode
@@ -600,9 +575,9 @@ enum DecodeError: Error {
 }
 ```
 
-This mirrors the structure of the Go decoder's lexer and parser, but produces an `SExpr` tree rather than a stream of tokens, a simplification that costs a little memory and saves a lot of code.
+The parser is a straightforward recursive descent. A `(` starts a list, which runs until the matching `)`; a `"` starts a string; anything else is a word, which becomes an integer, a floating-point number, or a symbol, whichever parses first. Building a complete tree before decoding costs some memory but makes the decoder much simpler, since it can look at any part of the input at any time.
 
-Now the `Decoder` itself. A `Decoder` provides three kinds of containers, depending on the shape of the thing being decoded: a *keyed* container for structs and dictionaries, an *unkeyed* container for arrays, and a *single-value* container for atoms. Our S-expression format encodes structs as a list of `(field value)` pairs, so the keyed container looks up a field by scanning that list:
+The `Decoder` protocol asks for three kinds of *container*, one for each shape of data: a *keyed* container for things with named fields, an *unkeyed* container for sequences, and a *single-value* container for atoms. In our format, a struct is a list of `(name value)` pairs, so making a keyed container means turning that list into a dictionary:
 
 ```swift
 struct SExprDecoder: Decoder {
@@ -637,9 +612,9 @@ struct SExprDecoder: Decoder {
 }
 ```
 
-The three container types are long but repetitive, because each protocol has a separate `decode` method for every primitive type (`Bool`, `String`, `Double`, `Float`, and the ten integer types) plus a generic one for any other `Decodable`. The generic one is the key to the design: when asked to decode a nested `Decodable` type, it creates a new `SExprDecoder` for the corresponding subtree and calls `T(from:)`, which recursively does the same for *that* type's fields.
+The container protocols are long, because they have a separate `decode` method for each primitive type (`Bool`, `String`, `Double`, `Float`, and the ten integer types) as well as a generic `decode` for every other `Decodable` type. Most of that length is repetition. The generic method is where the design comes together: to decode a nested value, it wraps the corresponding subtree in a new `SExprDecoder` and calls `T(from:)`, which asks its own questions of the subtree, and so on down.
 
-The single-value container does the real work of converting atoms. A private generic helper handles all ten integer types at once, using `FixedWidthInteger(exactly:)` to reject values that don't fit:
+The single-value container converts atoms to Swift values. A private generic helper serves all the integer types at once, using `init(exactly:)` so that a number too large for the requested type is reported as an error rather than silently truncated:
 
 ```swift
 struct AtomContainer: SingleValueDecodingContainer {
@@ -696,7 +671,7 @@ struct AtomContainer: SingleValueDecodingContainer {
 }
 ```
 
-The keyed container finds the field for each key and hands its value to an `AtomContainer`, so its many `decode` methods are one line each:
+The keyed container looks up the field for each key and delegates the conversion to an `AtomContainer`:
 
 ```swift
 struct FieldContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
@@ -749,9 +724,9 @@ struct FieldContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
 }
 ```
 
-The `decodeNil(forKey:)` method is how the synthesized code for optional properties asks whether a field is `nil`. Our format treats both a missing field and the symbol `nil` as absent.
+`decodeNil(forKey:)` is how the synthesized code for an optional property asks whether its value is absent. This format treats a missing field and the symbol `nil` the same way.
 
-Last, the unkeyed container decodes the elements of a list in order, keeping track of its position with `currentIndex`:
+The unkeyed container walks a list in order, with `currentIndex` marking its position:
 
 ```swift
 struct ListContainer: UnkeyedDecodingContainer {
@@ -807,7 +782,7 @@ struct ListContainer: UnkeyedDecodingContainer {
 }
 ```
 
-Finally, the public entry point, the analogue of `JSONDecoder.decode`:
+Finally, a top-level function plays the role that `JSONDecoder.decode(_:from:)` plays for JSON:
 
 ```swift
 func unmarshal<T: Decodable>(_ type: T.Type, from text: String) throws -> T {
@@ -816,63 +791,63 @@ func unmarshal<T: Decodable>(_ type: T.Type, from text: String) throws -> T {
 }
 ```
 
-And with that, we can decode *any* `Decodable` type from an S-expression, including types the decoder's author has never seen:
+Now any `Decodable` type can be read from an S-expression, though the decoder was written without knowledge of any of them:
 
 ```swift
-struct Movie: Codable {
+struct Recipe: Codable {
     var title: String
-    var year: Int
-    var color: Bool
-    var oscars: [String]
-    var sequel: String?
+    var servings: Int
+    var vegetarian: Bool
+    var steps: [String]
+    var source: String?
 }
 
 let text = """
-    ((title "Dr. Strangelove")
-     (year 1964)
-     (color nil)
-     (oscars ("Best Actor (Nomin.)" "Best Director (Nomin.)"))
-     (sequel nil))
+    ((title "Shakshuka")
+     (servings 4)
+     (vegetarian t)
+     (steps ("Soften onions and peppers" "Add tomatoes and spices" "Poach the eggs"))
+     (source nil))
     """
-let movie = try unmarshal(Movie.self, from: text)
-print(movie.title, movie.year, movie.oscars.count)  // "Dr. Strangelove 1964 2"
+let recipe = try unmarshal(Recipe.self, from: text)
+print(recipe.title, recipe.servings, recipe.steps.count)  // "Shakshuka 4 3"
 ```
 
-Compare the two halves of this section. In Go, the same job takes about 200 lines of reflection that sets fields by name through `reflect.Value`. Here, the decoder *itself* never looks at `Movie`; it merely answers questions the compiler-generated `init(from:)` asks: "give me the `Int` for the key `year`." Type-checking the result is automatic, because `Movie` asked for an `Int`, and what the container returns is an `Int` or an error.
+Note the division of labor. The decoder knows the *format*: how to find a field, what `t` means, how strings are quoted. The compiler-generated `init(from:)` knows the *type*: which fields exist and what type each must be. Neither knows the other's business, and nothing in the program looks at a type's layout at run time. The type checking that a reflective decoder would have to do by hand happens automatically, because `Recipe` asks for an `Int` and receives either an `Int` or an error.
 
 **Exercise 12.8:** The three containers repeat the same fifteen `decode` methods. The protocols require each one, but their bodies can still be shared. How far can you reduce the repetition? Then add `Int128` and `UInt128`, which the protocols support in Swift 6.
 
-**Exercise 12.9:** Make the keyed container track the `codingPath`, and use it to produce error messages that tell the user which field of which value was wrong, like `movie.oscars[1]: expected string, found 42`.
+**Exercise 12.9:** Make the containers maintain `codingPath`, and use it to produce error messages that pinpoint the problem, such as `recipe.steps[1]: expected string, found 42`.
 
-**Exercise 12.10:** Write the encoder half, an `Encoder` type that emits the S-expression format, so that `Codable` types round-trip. Test with randomized values (Section 11.2.6).
+**Exercise 12.10:** Write the matching `Encoder` (if you haven't already done Exercise 12.6) and test that `Codable` values survive a round trip, using randomized values as in Section 11.2.6.
 
 ## 12.7. Customizing Keys with `CodingKeys`
 
-Go's reflection reads *struct field tags*, the strings after a field's type, like `` `json:"color,omitempty"` ``. They're a way of attaching metadata to a field that run-time reflection can find. Swift has no tags and no field metadata, and doesn't need them: the same information is carried by an ordinary nested type, `CodingKeys`, that the compiler-generated code uses.
+Serialization formats often use names that differ from a program's property names: snake case instead of camel case, abbreviations, or names chosen long ago that the code has since outgrown. Some languages attach such information to fields as strings that run-time reflection reads back. Swift does it with ordinary declarations that the compiler-generated coding methods use, chiefly a nested enum named `CodingKeys`.
 
-We saw it in Section 4.5. The enum's cases are the stored properties that participate in coding, and its raw values are the names used in the external format:
+We met `CodingKeys` in Section 4.5. Its cases list the properties that take part in coding, and its raw values give their external names:
 
 ```swift
-struct Movie: Codable {
+struct Recipe: Codable {
     var title: String
-    var year: Int
-    var color: Bool
-    var oscars: [String]
+    var servings: Int
+    var vegetarian: Bool
+    var steps: [String]
 
     enum CodingKeys: String, CodingKey {
         case title
-        case year = "released"
-        case color
-        case oscars = "awards"
+        case servings = "serves"
+        case vegetarian = "veg"
+        case steps = "method"
     }
 }
 ```
 
-Any decoder or encoder, whether for JSON, property lists, or our S-expressions, then uses `released` and `awards` as the field names. Because the keys are real Swift code, the compiler checks them: a case that doesn't correspond to a property is an error, and so is a property that isn't covered by a case and has no default value.
+Every encoder and decoder, whether it produces JSON, property lists, or the S-expressions of this chapter, now uses `serves`, `veg`, and `method`. Since `CodingKeys` is code, mistakes are caught at compile time: a case that matches no property is an error, and so is a property with neither a case nor a default value.
 
-For *systematic* renaming, rather than choosing a name for each property, the encoders offer *strategies*: `JSONEncoder.keyEncodingStrategy = .convertToSnakeCase` converts every property name from `camelCase` to `snake_case`, and `JSONDecoder.keyDecodingStrategy = .convertFromSnakeCase` does the inverse, as we used in Section 4.5.
+For renaming *every* key by a rule, encoders and decoders provide strategies instead: `JSONEncoder.keyEncodingStrategy = .convertToSnakeCase` and its decoding counterpart (Section 4.5).
 
-The finest level of control is a hand-written `encode(to:)` and `init(from:)`. For example, a type that should be encoded as a single string, like a color `"#ff8800"` or a version `"1.2.3"`, can implement them using a single-value container:
+When a type needs a representation that has little to do with its properties, it can write `encode(to:)` and `init(from:)` itself. A version number, for example, is more naturally a single string like `"1.2.3"` than an object with three fields:
 
 ```swift
 struct Version: Codable, Equatable {
@@ -899,11 +874,11 @@ struct Version: Codable, Equatable {
 }
 ```
 
-This is the same role that Go's `json.Marshaler` and `UnmarshalJSON` methods play: an escape hatch from the default encoding for types that need one.
+Because these methods are written against the `Encoder` and `Decoder` protocols, the custom representation applies in every format at once.
 
 ### 12.7.1. Property Wrappers as Field Annotations
 
-One other piece of Swift deserves a mention here, since it's the closest analogue to a Go struct tag that *attaches behavior* to a field: the *property wrapper*. We met it in Section 2.3.2, where `@Option` and `@Flag` described how to parse each field of a command. A property wrapper is a type that wraps the storage of a property and can run code when it's read or written, and also exposes a *projected value* through the `$` prefix. Swift libraries use them as annotations that other code can discover by reflection, which is how `ArgumentParser` finds the options of a command: it reflects over the command with `Mirror`, and finds children that are instances of its wrapper types.
+Sometimes metadata about a field should come with *behavior*: this value must stay within a range, this one should be trimmed of whitespace, this one is parsed from a command-line flag. Swift's tool for that is the *property wrapper* (we used ArgumentParser's `@Option` and `@Flag` in Section 2.3.2). A property wrapper is a type that owns a property's storage and mediates every read and write:
 
 ```swift
 @propertyWrapper
@@ -931,15 +906,15 @@ v.level = 20
 print(v.level)  // "11"
 ```
 
-Here the annotation `@Clamped(0...11)` is declarative metadata *and* behavior: every write to `level` is clamped, with no tag parsing and no run-time reflection. That's the Swift style in general: where Go attaches a string to a field and interprets it later, Swift attaches a *type* to a field and lets the compiler check and apply it.
+The annotation `@Clamped(0...11)` is both a declaration of intent and its implementation; there's nothing to look up or interpret at run time. Property wrappers and reflection also cooperate: a wrapped property's storage appears in a mirror as an instance of the wrapper type, which is how ArgumentParser discovers a command's options. It mirrors the command struct and looks for children whose values are its own wrapper types.
 
 ## 12.8. Macros: Reflection at Compile Time
 
-Swift 5.9 added a feature that covers much of the ground that reflection covers in other languages: *macros*. A macro is a function that runs at compile time. It receives the syntax tree of the code it's attached to and produces new Swift code, which the compiler then compiles along with the rest. Because a macro sees the *declaration* of a type, including its property names, types, and attributes, it can do what Go programs do with run-time reflection (enumerate the fields of a struct, generate serialization code, build lookup tables) once, at build time, producing ordinary Swift with no run-time cost and full type checking.
+Many uses of reflection share a pattern: some code needs to know the structure of a type (its property names, their types, their attributes), and it learns that structure at run time because there's no other time to learn it. Swift 5.9 provided another time: compile time. A *macro* is a program that the compiler runs during the build. It receives the syntax of the code it's applied to and returns new Swift code to be compiled alongside it. A macro attached to a type declaration can read the declaration's properties and generate lookup tables, conformances, or serialization code, the same results reflection would compute, but produced once, checked by the compiler, and free at run time.
 
-Macros come in two broad kinds. *Freestanding* macros stand alone, are written with a `#` prefix, and produce an expression or declarations. We have been using one throughout Chapter 11: `#expect(a == b)` is a macro that inspects the *syntax* of its argument to build a failure message showing both operands. *Attached* macros are written with `@`, are attached to a declaration, and can add members, conformances, peers, or accessors to it. `@Test` and `@Suite` are attached macros, as is `@Observable`, which rewrites the stored properties of a class to track reads and writes.
+Macros are either *freestanding* or *attached*. A freestanding macro is invoked with `#` and expands into an expression or declarations; `#expect` from Chapter 11 is one, and it's how a failed expectation can show the values of both sides of a comparison: the macro rewrote the comparison to capture them. An attached macro is written with `@` before a declaration and can add members, conformances, accessors, or neighboring declarations to it; `@Test`, `@Suite`, and `@Observable` are all attached macros.
 
-Using a macro is simple. Consider a package that provides an `@AllFields` macro that adds, to any struct it's attached to, a static table of its field names:
+Here's what using a simple attached macro looks like. `@AllFields` gives a struct a static list of its stored property names:
 
 ```swift
 @AllFields
@@ -951,7 +926,7 @@ struct Person {
 print(Person.fieldNames)  // "["name", "age"]"
 ```
 
-The compiler expands the macro, which shows the code that it writes for us:
+Expanding the macro shows the code it writes:
 
 ```swift
 struct Person {
@@ -962,7 +937,7 @@ struct Person {
 }
 ```
 
-The macro implementation is a Swift program that uses the `swift-syntax` package to examine and construct syntax trees. It lives in its own target, which is compiled for the host (the machine doing the build) and run by the compiler as a plug-in in a sandbox:
+The macro's implementation is itself a Swift program, which uses the `swift-syntax` package to read and build syntax trees. A package that provides a macro has two targets, one for the implementation and one for the declaration that clients import:
 
 ```swift
 // Package.swift: a macro target, plus a library that exposes it
@@ -1014,32 +989,34 @@ struct AllFieldsPlugin: CompilerPlugin {
 public macro AllFields() = #externalMacro(module: "AllFieldsMacros", type: "AllFieldsMacro")
 ```
 
-Macros are the Swift answer to the question "how can I write code that depends on the structure of my types?" With a macro, the `setters` table of Section 12.5.1 could be generated from the declaration of `Config`, and the `Codable` conformance itself, which was originally compiler magic, could be written as a macro. A few things set macros apart from reflection:
+The `.macro` target is built for the machine running the compiler, not for the program's target platform, and the compiler runs it in a sandbox. The `#externalMacro` declaration in the library target connects the name `AllFields`, which clients use, to the type that implements it.
 
-- They produce *source code*, which you can read, using the *Expand Macro* command in Xcode or `-Xfrontend -dump-macro-expansions` on the command line. There's no hidden run-time behavior.
-- The result is *type-checked* like any other code. A macro can't produce something that doesn't compile without a diagnostic pointing at the problem.
-- They can emit *diagnostics* of their own. A macro that requires its argument to be a struct, for example, can report an error at the right place in the source.
-- They're *hygienic*: a macro can't capture or accidentally interfere with names in the code around it, other than those it's explicitly designed to touch.
-- Their *cost* is build time, mostly the compile time of the `swift-syntax` library that macro implementations depend on, though prebuilt versions of it have reduced that. Run-time cost is zero.
+Macros cover a lot of reflection's territory. The `setters` table of Section 12.5.1 could be generated by a macro from the declaration of `Config`. So could a `CustomStringConvertible` conformance, a memberwise copy-with-changes method, or the `Codable` conformance itself, which predates macros but is the same kind of thing. Compared with reflection, macros have distinct strengths:
 
-On the other hand, they're harder to write than a reflective function: you work with syntax trees rather than values, and you can only act on what's visible in the declaration the macro is attached to, not on the types it refers to, which may be declared elsewhere. A macro can't ask "what are the properties of the type of this field?" Run-time reflection can, since it sees every value's actual type.
+- **You can read the result.** Xcode's *Expand Macro* command, or `-Xfrontend -dump-macro-expansions` on the command line, shows the generated code. Nothing happens at run time that isn't in source you could have written.
+- **The result is type-checked.** Generated code goes through the compiler like any other, and problems are reported at a source location.
+- **Macros can diagnose misuse.** A macro can reject declarations it doesn't support with an error pointing at the offending line.
+- **Expansion is hygienic.** Names a macro introduces don't collide with names at the use site unless the macro means them to.
+- **The cost is paid at build time.** Implementations depend on `swift-syntax`, which adds to compile time (less so with prebuilt copies), but expanded code costs nothing extra to run.
 
-A good guideline is that a macro is the right choice when the information is *static*: known at compile time from the declaration. Reflection is for the information that's truly dynamic: the contents of an `Any` that arrived from somewhere else.
+Macros have limits, though. They work on *syntax*, so a macro attached to a struct sees the text of that struct's declaration and nothing else. It can't ask what properties the type of one of the fields has, if that type is declared elsewhere, because it has no access to the type checker's knowledge. Reflection, by contrast, sees whatever value actually turns up at run time.
 
-**Exercise 12.11:** Write a macro `@Describing` that adds a `description` property to a struct, listing its property names and values, like `Person(name: "Ada", age: 36)`. Compare the result with the output of `print` for a struct with no custom `description`.
+That suggests the rule of thumb. If what you need to know is in a declaration you control, generate code from it with a macro, or let the compiler synthesize a conformance. If it only exists at run time, as with values of unknown type arriving in an `Any`, reflect.
 
-**Exercise 12.12:** Use the macro testing support in `swift-syntax` (`assertMacroExpansion`) to write a test for `AllFields` with a struct that has computed properties, `let` properties, and properties with default values.
+**Exercise 12.11:** Write a macro `@Describing` that adds a `description` property listing a struct's property names and values. Compare its output with what `print` shows for a struct with no description.
+
+**Exercise 12.12:** Test `AllFields` with `assertMacroExpansion` from `swift-syntax`, using a struct that has computed properties, `let` properties, and properties with default values.
 
 ## 12.9. A Word of Caution
 
-Reflection is a powerful and expressive tool, but it should be used with care, for three reasons.
+Reflection lets a program step outside its own type system, and most of the cautions about it follow from that.
 
-The first reason is that reflection-based code can be fragile. For every mistake that would cause a compiler to report a type error, there is a corresponding way to misuse reflection, but whereas the compiler reports the mistake at build time, a reflective mistake is reported as a failed cast, a missing key, or a wrong result at run time, possibly long after the program was written, possibly in production. In Swift, some of the mistakes are even quieter: `Mirror`'s output isn't part of any type's API, and it can change when a type's implementation does. Code that formats `Date` by reflection, for instance, could break when the internal layout of `Date` changes.
+**Reflection sees representation, not meaning.** A mirror reports how a value happens to be stored, which is not necessarily what the value means. A `Date` is reflected as whatever private fields the current Foundation uses; a type with a cache shows the cache; a type that normalizes its input shows the normalized form. Code that interprets these details makes promises on the type's behalf that the type never made, and breaks without warning when the representation changes.
 
-Reflection-based code should therefore be restricted to the boundaries of a system: the code that reads or writes an external format, or prints values for debugging. Everywhere else, use static types. Where reflection is genuinely necessary, put it behind a small, well-tested function with a clear contract, and use `Codable`, key paths, or macros instead whenever the structure is knowable at compile time.
+**Errors move from build time to run time.** Every mistake the compiler would have caught in typed code (a misspelled name, an unexpected type, a missing case) becomes, in reflective code, a failed cast or a wrong answer discovered while the program runs, possibly in production. The function signatures don't help either: a function that takes `Any` and reflects over it declares nothing about what it actually supports, so its contract lives only in documentation. Document it carefully, and fail loudly and precisely on input outside it.
 
-The second reason to avoid reflection is that, even when types serve as a form of documentation and are checked by the compiler, reflective code can't be: functions that take an `Any` and use `Mirror` have no signature that tells you what they actually support. Define the contract in documentation, and fail loudly, with a precise error message, on unsupported input.
+**It's slow.** Creating a mirror allocates; each child is boxed into an `Any`; each cast consults type metadata at run time. That's negligible in a debugging aid and significant in a hot loop, often by one or two orders of magnitude compared with specialized code. Measure (Chapter 11) before letting reflection onto a critical path.
 
-The third reason is that reflection-based functions can be one or two orders of magnitude slower than code specialized for a particular type. Every `Mirror(reflecting:)` allocates, every child is boxed into an `Any`, and every cast walks type metadata. In a test that runs a few times, it doesn't matter. In a hot path of a server, it can. This is the performance side of the advantage of `Codable` over `Mirror`, and the main reason Swift's standard serialization is built on the former. If a function is on a critical path, measure it (Chapter 11) and consider a macro or hand-written conformance instead.
+**There's usually a better tool.** For serialization, use `Codable`. For choosing properties dynamically, use key paths. For code that depends on a type's declaration, use a macro or a synthesized conformance. For behavior that varies by type, use a protocol. Reflection is for the remaining cases, where a program truly must cope with values it knows nothing about: debuggers, loggers, test helpers, and generic tooling at the edges of a system.
 
-All of that said, reflection is one of the means by which Swift programs examine unknown values, and, like the unsafe operations of the next chapter, a skilled programmer uses it when appropriate, and as sparingly as possible.
+Used in those places, reflection is invaluable. Kept to those places, it won't undermine the guarantees that make the rest of the program trustworthy.
