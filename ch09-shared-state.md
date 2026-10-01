@@ -1,287 +1,271 @@
 # 9. Concurrency with Shared State
 
-In the previous chapter, we presented several programs that use tasks and asynchronous sequences to express concurrency in a direct and natural way. However, in doing so, we glossed over a number of important and subtle issues that programmers must bear in mind when writing concurrent code.
+Chapter 8 kept its tasks out of each other's way. Each one owned its data, and values passed between tasks through task results and streams. That style is the easiest to get right, and it should be your first choice. But it isn't always practical. A cache that many requests consult, a counter that many handlers update, a model object that a user interface and a network layer both touch: some state really is shared.
 
-In this chapter, we'll take a closer look at the mechanics of concurrency. In particular, we'll point out some of the problems associated with sharing mutable state among multiple tasks, the analytical techniques for recognizing those problems, and the patterns for solving them. We'll also see how Swift 6 turns many of these problems from subtle run-time bugs into compile-time errors. Finally, we'll explain some of the technical differences between tasks and operating system threads.
+This chapter is about that harder case. We'll look at what goes wrong when tasks share mutable state carelessly, at the three basic strategies for preventing it, and at the tools Swift provides for each: immutability, mutexes and atomics, and actors. Along the way we'll see how the Swift 6 compiler turns the most dangerous class of concurrency bug, the data race, from something you hunt for at run time into something it refuses to compile. We'll end with a closer look at how tasks map onto operating-system threads, which matters for performance and occasionally for correctness.
 
 ## 9.1. Data Races and `Sendable`
 
-In a sequential program, that is, a program with only one thread of control, the steps of the program happen in the familiar execution order determined by the program logic. For instance, in a sequence of statements, the first one happens before the second one, and so on. In a program with two or more tasks, the steps within each task happen in the familiar order, but in general we don't know whether an event *x* in one task happens before an event *y* in another task, or happens after it, or is simultaneous with it. When we cannot confidently say that one event happens before the other, then the events *x* and *y* are *concurrent*.
+Within a single task, statements happen in the order the code says. Across tasks, there's no such order. If task A executes statement *a* and task B executes statement *b*, then, unless something links them (one task waiting for the other, say, or both taking the same lock), *a* might happen before *b*, after it, or at effectively the same moment. Most concurrency bugs come down to code that quietly assumes an order that nothing guarantees.
 
-Consider a function that works correctly in a sequential program. That function is *concurrency-safe* if it continues to work correctly even when called concurrently, that is, from two or more tasks with no additional synchronization. We can generalize this notion to a set of collaborating functions, such as the methods and operations of a particular type. A type is concurrency-safe if all its accessible methods and operations are concurrency-safe.
+Call a function *concurrency-safe* if it still behaves correctly when several tasks call it at overlapping times, without the callers doing anything special to coordinate. A type is concurrency-safe if all of its operations are. A great deal can make code unsafe in this sense, including deadlocks and starvation, but the most common culprit by far is the *race condition*: a bug that shows up only for certain interleavings of the tasks' operations. Race conditions are notoriously hard to track down, because the bad interleaving may be rare. A program can pass every test for months and then fail under heavy load, on a machine with more cores, or after an unrelated change shifts the timing.
 
-There are many reasons a function might not work when called concurrently, including deadlock, livelock, and resource starvation. We don't have space to discuss all of them, so we'll focus on the most important one, the *race condition*.
-
-A race condition is a situation in which the program does not give the correct result for some interleavings of the operations of multiple tasks. Race conditions are pernicious because they may remain latent in a program and appear infrequently, perhaps only under heavy load or when using certain compilers, platforms, or architectures. This makes them hard to reproduce and diagnose.
-
-It is traditional to explain the seriousness of race conditions through the metaphor of financial loss, so we'll consider a simple bank account program.
+Here's a small example. A box office sells tickets for a concert with 100 seats:
 
 ```swift
-// Package bank implements a bank with only one account.
-var balance = 0
+// Package boxoffice sells seats for a single concert.
+var seatsLeft = 100
 
-func deposit(_ amount: Int) {
-    balance = balance + amount
+func sell(_ n: Int) {
+    seatsLeft = seatsLeft - n
 }
 
-func currentBalance() -> Int {
-    balance
+func available() -> Int {
+    seatsLeft
 }
 ```
 
-For such a trivial program, we can see at a glance that any sequence of calls to `deposit` and `currentBalance` will give the right answer, that is, `currentBalance` will report the sum of all amounts previously deposited. However, if we call these functions not in sequence but concurrently, `currentBalance` is no longer guaranteed to give the right answer. Consider the following two tasks, which represent two transactions on a joint bank account:
+Called from one task, these functions are obviously correct. Now suppose there are two ticket windows, north and south, each served by its own task, and they happen to sell tickets at the same moment:
 
 ```swift
-// Alice:
-Task {
-    deposit(200)  // A1
-    print("=", currentBalance())  // A2
-}
-
-// Bob:
-Task {
-    deposit(100)  // B
-}
+Task { sell(2) }  // north window
+Task { sell(3) }  // south window
 ```
 
-Alice deposits $200, then checks her balance, while Bob deposits $100. Since the steps A1 and A2 occur concurrently with B, we cannot predict the order in which they happen. Intuitively, it might seem that there are only three possible orderings. But there's a fourth possibility, in which Bob's deposit occurs in the middle of Alice's deposit, after the balance has been read (`balance + amount`) but before it has been updated (`balance = ...`), causing Bob's transaction to disappear. This is because Alice's deposit operation A1 is really a sequence of two operations, a read and a write; call them A1r and A1w. Here's the problematic interleaving:
+The statement `seatsLeft = seatsLeft - n` looks like one step but is really two: read the current value, then write a new one. Write those steps as N-read, N-write, S-read, and S-write. Here's one perfectly possible interleaving:
 
 ```
-Data race
-      0
-A1r   0         ... = balance + amount
-B   100
-A1w 200         balance = ...
-A2  "= 200"
+step       seatsLeft   note
+N-read        100      north computes 100 - 2 = 98
+S-read        100      south computes 100 - 3 = 97
+S-write        97
+N-write        98      south's sale has vanished
 ```
 
-After A1r, the expression `balance + amount` evaluates to 200, so this is the value written during A1w, despite the intervening deposit. The final balance is only $200. The bank is $100 richer at Bob's expense.
+Five tickets were sold, but the count dropped by only two. Run this long enough and the concert will be oversold.
 
-This program contains a particular kind of race condition called a *data race*. A data race occurs whenever two tasks access the same variable concurrently and at least one of the accesses is a write.
+That is a *data race*: two tasks accessing the same memory at overlapping times, with at least one of them writing. The damage above is a lost update, which is bad enough. With more complex values it can be worse. Two tasks appending to the same array at once might both decide the buffer is uniquely referenced and both modify it in place, or both reallocate it; a dictionary can be left with a corrupt table. The outcome is *undefined behavior*: anything from a wrong answer to a crash to silent memory corruption.
 
-Things get even messier if the data race involves a variable of a type that is larger than a single machine word, such as a string, an array, or a dictionary. If two tasks append to the same array at the same time, both may decide to reallocate the buffer, and the copy-on-write logic, which relies on an accurate reference count, may be fooled. The result is *undefined behavior*: memory corruption, a crash, or silently wrong results.
-
-In most languages, avoiding data races is the programmer's responsibility. In Swift 6, it's the compiler's. If we compile the bank program in the Swift 6 language mode, the compiler rejects it:
+In most languages, preventing data races is left to the programmer's discipline, aided at best by a run-time detector. Swift 6 takes responsibility for it. The box-office code above doesn't compile in the Swift 6 language mode:
 
 ```
-error: var 'balance' is not concurrency-safe because it is nonisolated global shared mutable state
-var balance = 0
+error: var 'seatsLeft' is not concurrency-safe because it is nonisolated global shared mutable state
+var seatsLeft = 100
     ^
-note: convert 'balance' to a 'let' constant to make 'Sendable' shared state immutable
-note: add '@MainActor' to make var 'balance' part of global actor 'MainActor'
+note: convert 'seatsLeft' to a 'let' constant to make 'Sendable' shared state immutable
+note: add '@MainActor' to make var 'seatsLeft' part of global actor 'MainActor'
 ```
 
-That's the core of Swift's *data-race safety*: it's a compile-time guarantee, not a run-time check, that no two tasks can access the same mutable state concurrently unless that state is protected.
+The compiler's notes hint at the ways out. Every strategy for avoiding data races is a variation on one of three ideas.
 
-There are three ways to avoid a data race, and Swift supports all of them.
-
-The first way is not to write the variable. If shared state is immutable, many tasks can safely read it at once. Swift makes this the default: `let` constants of value types are deeply immutable, and a global `let` is safe to read from anywhere, as long as its type is `Sendable` (which we'll define in a moment).
+**Don't mutate.** Data that never changes can be read by any number of tasks at once with no risk at all. In Swift, a `let` of a value type is immutable all the way down, so a global constant table is safe to share:
 
 ```swift
-let icons: [String: Image] = [
-    "spades.png": loadIcon("spades.png"),
-    "hearts.png": loadIcon("hearts.png"),
-    "diamonds.png": loadIcon("diamonds.png"),
-    "clubs.png": loadIcon("clubs.png"),
+let statusReasons: [Int: String] = [
+    200: "OK",
+    301: "Moved Permanently",
+    404: "Not Found",
+    500: "Internal Server Error",
 ]
 
 /// Concurrency-safe.
-func icon(_ name: String) -> Image? { icons[name] }
+func reason(for status: Int) -> String {
+    statusReasons[status] ?? "Unknown"
+}
 ```
 
-The second way to avoid a data race is to avoid accessing the variable from multiple tasks. This is the approach taken by many of the programs in the previous chapter. For example, the parent task in the concurrent web crawler (Section 8.6) is the sole task that accesses the `seen` set, and the broadcaster task in the chat server (Section 8.10) is the only task that accesses the `clients` dictionary. These variables are *confined* to a single task. Since other tasks cannot access the variable directly, they must send requests to the confining task, which is what the Go proverb "Do not communicate by sharing memory; instead, share memory by communicating" means. Swift elevates this pattern to a language feature, the *actor*, which we'll see in Section 9.3.
+**Don't share.** If only one task ever touches a piece of mutable state, there's nobody to race with. We relied on that throughout Chapter 8: the crawler's `seen` set lived in the parent task, and the chat server's member list lived in the room task. Other tasks that wanted the state changed sent requests instead of touching it. Swift's *actors*, introduced in Section 9.3, turn this arrangement into a language construct.
 
-The third way to avoid a data race is to allow many tasks to access the variable, but only one at a time. This approach is known as *mutual exclusion* and is the subject of the next section.
+**Take turns.** If state must be both shared and mutable, make sure only one task accesses it at a time. That's *mutual exclusion*, the subject of Section 9.2.
 
 ### 9.1.1. The `Sendable` Protocol
 
-How does the compiler know what's safe? The key is a protocol called `Sendable`. A type that conforms to `Sendable` is one whose values can be safely shared between concurrent tasks. `Sendable` has no requirements; it's a *marker protocol* whose conformance the compiler checks:
+To check for races, the compiler needs to know which values are safe to hand from one task to another. That knowledge is captured by the protocol `Sendable`. It has no methods. It's a *marker* that the compiler checks according to a few rules:
 
-- Value types (structs and enums) are `Sendable` if all their stored properties or associated values are `Sendable`. For non-public types, the compiler infers this automatically. All the basic types are `Sendable`, and the standard collections are `Sendable` when their elements are.
-- Actors are always `Sendable`, since they protect their own state.
-- A final class is `Sendable` only if all its stored properties are immutable `let`s of `Sendable` types, or if it protects its state with a lock and says so with `@unchecked Sendable` (an assertion that the compiler can't verify, so you must be sure).
-- Function types are `Sendable` if they're marked `@Sendable`, which means they capture only `Sendable` values, and only immutably.
+- A struct or enum is `Sendable` when everything it stores is `Sendable`. For types that aren't `public`, the compiler works this out by itself. Numbers, strings, and the other basic types are `Sendable`, and so are arrays, dictionaries, and sets of `Sendable` elements.
+- Every actor is `Sendable`, because it guards its own state.
+- A `final` class is `Sendable` if all its stored properties are `let`s of `Sendable` type. A class that guards mutable state with its own lock may claim `@unchecked Sendable`, which tells the compiler to take the programmer's word for it.
+- A closure is `Sendable` when its type is marked `@Sendable`, which requires that it capture only `Sendable` values and never capture a variable that could be mutated.
 
-Whenever a value crosses a boundary between concurrent contexts (when it's captured by a closure passed to `Task` or `addTask`, passed to an actor, returned from one, or yielded into an `AsyncStream`), the compiler checks that it's `Sendable`. So a closure that captures a mutable variable can't be run in a child task:
+The compiler applies these rules wherever a value moves between concurrent contexts: when a closure is handed to `Task` or `addTask`, when an argument is passed to an actor or a result comes back from one, when a value is yielded into an `AsyncStream`. A closure that would mutate a shared variable from a child task, for instance, is rejected:
 
 ```swift
-var count = 0
+var total = 0
 await withTaskGroup(of: Void.self) { group in
     group.addTask {
-        count += 1  // error: mutation of captured var 'count' in concurrently-executing code
+        total += 1  // error: mutation of captured var 'total' in concurrently-executing code
     }
 }
 ```
 
-Swift 6 also performs *region-based isolation analysis*, which lets a non-`Sendable` value cross a boundary if the compiler can prove that the sender never uses it again. For instance, a freshly created non-`Sendable` object can be passed to a task, so long as the code that created it doesn't touch it afterwards. A parameter marked `sending` expresses the same guarantee in a function's signature. This makes the rules less restrictive than they might first appear: what matters is not whether a value *could* be shared, but whether it *is*.
+These rules would be painfully strict if they applied to every value equally, so Swift 6 refines them with *region-based isolation*. A value that isn't `Sendable` may still cross into another task if the compiler can see that the original owner never uses it again; the value is transferred, not shared. A parameter declared `sending` promises the same thing in a function's signature. The question the compiler asks, in effect, is not "could this value be shared?" but "is it actually being shared?"
 
 ## 9.2. Mutual Exclusion: `Mutex`
 
-The `Synchronization` module of the standard library, introduced in Swift 6, provides a `Mutex` type. A mutex (short for mutual exclusion lock) guarantees that at most one task at a time can access the value it protects.
+A *mutex* (mutual-exclusion lock) is the classic tool for letting several tasks share mutable state safely, by ensuring that only one of them uses it at a time. Swift 6 added one to the standard library's `Synchronization` module.
 
-Unlike the mutexes of most languages, including Go's `sync.Mutex`, Swift's `Mutex` *contains* the state it protects. The only way to get at that state is to call `withLock`, which acquires the lock, passes the state to a closure as an `inout` parameter, and releases the lock when the closure returns:
+Swift's `Mutex` differs from the locks in most languages in one important way. In C or Go, a lock and the data it protects are separate things that the programmer promises to use together. A Swift `Mutex` *holds* its data. You can't reach the data except by calling `withLock`, which acquires the lock, lends the data to a closure as an `inout` parameter, and releases the lock when the closure is done:
 
 ```swift
-// swiftpl/ch9/bank2
+// swiftpl/ch9/boxoffice2
 import Synchronization
 
-let balance = Mutex(0)
+let seatsLeft = Mutex(100)
 
-func deposit(_ amount: Int) {
-    balance.withLock { $0 += amount }
+func sell(_ n: Int) {
+    seatsLeft.withLock { $0 -= n }
 }
 
-func currentBalance() -> Int {
-    balance.withLock { $0 }
+func available() -> Int {
+    seatsLeft.withLock { $0 }
 }
 ```
 
-This design rules out the most common mutex mistakes. It's impossible to access the protected state without holding the lock, since there's no other way to reach it, and impossible to forget to release the lock, since `withLock` releases it automatically when the closure returns or throws. In Go, the convention is to put the guarded variables right after the mutex declaration and to use `defer mu.Unlock()`; in Swift, the type system enforces the equivalent.
+Two familiar mistakes become impossible. You can't read or write the seat count without holding the lock, because there's no way to name it outside a `withLock` closure. And you can't forget to unlock, because the lock is released automatically when the closure finishes, whether it returns normally or throws.
 
-The region of code between acquiring and releasing the lock, here the closure, is called a *critical section*. Each time a task calls `deposit` or `currentBalance`, it must wait for any other task inside a critical section on the same mutex to leave it.
+The body of a `withLock` closure is a *critical section*. While one task is inside it, any other task calling `withLock` on the same mutex waits its turn.
 
-`Mutex` is `Sendable`, so a global `let` holding one can be accessed from any task. It is a *noncopyable* type (`~Copyable`), since copying a lock would make no sense, so it is usually stored in a `let` at global scope, as a static property, or in a property of a final class:
+`Mutex` is `Sendable`, so a global `let` holding one may be used from any task. It's also *noncopyable* (`~Copyable`): copying a lock would produce two locks guarding what's supposed to be one piece of state, which makes no sense. In practice that means a mutex lives in a global or static `let`, or in a stored `let` of a final class:
 
 ```swift
-final class Account: Sendable {
-    private let balance = Mutex(0)
+final class BoxOffice: Sendable {
+    private let seatsLeft = Mutex(100)
 
-    func deposit(_ amount: Int) {
-        balance.withLock { $0 += amount }
+    func sell(_ n: Int) {
+        seatsLeft.withLock { $0 -= n }
     }
 }
 ```
 
-Because the class's only stored property is a `let` of `Sendable` type, the compiler accepts the class's declaration of `Sendable` without `@unchecked`.
+Since the class stores nothing but a `let` of a `Sendable` type, the compiler can verify its `Sendable` conformance directly; no `@unchecked` is needed.
 
 ### 9.2.1. Atomicity and Critical Sections
 
-Consider the `withdraw` function below. On success, it reduces the balance by the specified amount and returns `true`. But if the account holds insufficient funds for the transaction, `withdraw` restores the balance and returns `false`.
+Customers don't buy tickets blindly. They ask for a number of seats, and the sale goes through only if that many are left. A first attempt uses the two functions we already have:
 
 ```swift
 // NOTE: not atomic!
-func withdraw(_ amount: Int) -> Bool {
-    deposit(-amount)
-    if currentBalance() < 0 {
-        deposit(amount)
-        return false  // insufficient funds
+func book(_ n: Int) -> Bool {
+    guard available() >= n else {
+        return false  // sold out
     }
+    sell(n)
     return true
 }
 ```
 
-This function eventually gives the correct result, but it has a nasty side effect. When an excessive withdrawal is attempted, the balance transiently dips below zero. This may cause a concurrent withdrawal for a modest sum to be spuriously rejected. So if Bob tries to buy a sports car, Alice can't pay for her morning coffee. The problem is that `withdraw` is not *atomic*: it consists of a sequence of three separate operations, each of which acquires and then releases the mutex lock, but nothing locks the whole sequence.
+Each function call takes the lock and releases it, so there's no data race. But there's still a race *condition*. Suppose three seats remain and both windows try to book two. Both call `available()`, both see three, both decide to go ahead, and both call `sell(2)`. The count ends at −1. The check and the update are each protected, but nothing protects the *pair*, so another task can slip in between them. An operation like `book` needs to be *atomic*: it must appear to happen all at once, with no other task able to observe or interfere with an intermediate state.
 
-Ideally, `withdraw` should acquire the mutex lock once around the whole operation. With `withLock`, that's natural, because the closure has direct access to the protected state:
+The fix is to hold the lock across both steps, which `withLock` makes easy because the closure has the state in hand:
 
 ```swift
-func withdraw(_ amount: Int) -> Bool {
-    balance.withLock { balance in
-        guard balance >= amount else {
-            return false  // insufficient funds
+func book(_ n: Int) -> Bool {
+    seatsLeft.withLock { seats in
+        guard seats >= n else {
+            return false  // sold out
         }
-        balance -= amount
+        seats -= n
         return true
     }
 }
 ```
 
-Note that we can't implement `withdraw` by calling `deposit` from inside the closure, because Swift's `Mutex` is not *re-entrant*: calling `withLock` again on the same mutex from inside its own critical section would deadlock (or trap). Go's mutexes aren't re-entrant either. A common solution is to divide a function such as `deposit` into two: an unexported function that assumes the lock is already held and does the real work, and an exported function that acquires the lock before calling the first. In Swift, the first function takes the protected state as an `inout` parameter, which makes the assumption explicit:
+It's tempting to write this by calling `available()` or `sell(_:)` from inside the closure. Don't. A Swift `Mutex` isn't *reentrant*, so a task that calls `withLock` on a mutex it already holds will deadlock waiting for itself (or trap, if the runtime detects it). The usual remedy is to split each operation in two: a private worker that assumes the lock is already held, and a public wrapper that takes the lock and calls the worker. In Swift, the worker can take the protected value as an `inout` parameter, which turns "the caller must hold the lock" from a comment into a fact, since only code inside `withLock` has the value to pass:
 
 ```swift
-func deposit(_ amount: Int) {
-    balance.withLock { deposit(amount, to: &$0) }
+func sell(_ n: Int) {
+    seatsLeft.withLock { sell(n, from: &$0) }
 }
 
-/// Requires the caller to hold the lock (which it must, to have &balance).
-private func deposit(_ amount: Int, to balance: inout Int) {
-    balance += amount
+/// Requires the lock to be held; the caller proves it by passing &seats.
+private func sell(_ n: Int, from seats: inout Int) {
+    seats -= n
 }
 ```
 
-Encapsulation (Section 6.6), by reducing unexpected interactions in a program, helps us maintain data structure invariants. For the same reason, encapsulation also helps us maintain concurrency invariants. When you use a mutex, make sure that both it and the state it guards are not exported, whether they are module-level variables or the properties of a type.
+Keep the mutex and everything it protects private. If the protected state can be reached from outside the type or file, so can ways to break its invariants. Encapsulation (Section 6.6) is as much a concurrency tool as an organizational one.
 
-There's one more important restriction on `withLock`: its closure is synchronous. You can't `await` inside a critical section. This is deliberate. A task that suspends while holding a lock would keep other tasks waiting for an unpredictable length of time, and if the task that would eventually release the lock needed one of the threads blocked waiting for it, the program would deadlock. If you need to hold exclusive access across a suspension point, you need an actor, and you need to think carefully about reentrancy (Section 9.4).
+One more rule: a `withLock` closure is synchronous, so you can't `await` while holding a mutex. That's a feature. A task that suspended while holding a lock could keep every other task waiting for an unbounded time, and if the work needed to wake it up were queued behind the very tasks blocked on the lock, the program would never make progress. When exclusive access really must span an `await`, the tool is an actor, used with the care described in Section 9.4.
 
 ### 9.2.2. Atomics
 
-For a single integer counter or flag, a mutex is more than you need. The `Synchronization` module also provides `Atomic`, which performs lock-free operations on integers, booleans, and a few other types, using the processor's atomic instructions:
+When the shared state is a single number or flag, even a mutex is heavier than necessary. `Synchronization` also provides `Atomic`, which updates integers, Booleans, and a few other simple types using the processor's lock-free atomic instructions:
 
 ```swift
 import Synchronization
 
-let requests = Atomic<Int>(0)
+let requestsServed = Atomic<Int>(0)
 
 func handle() {
-    requests.add(1, ordering: .relaxed)
+    requestsServed.add(1, ordering: .relaxed)
     // ...
 }
 
-print(requests.load(ordering: .relaxed))
+print(requestsServed.load(ordering: .relaxed))
 ```
 
-Every atomic operation takes an explicit *memory ordering*, which specifies what guarantees it makes about the visibility of other memory operations. `.relaxed` makes no guarantees beyond the atomicity of the operation itself, which is fine for statistics counters; `.acquiring`, `.releasing`, and `.sequentiallyConsistent` give stronger guarantees. Atomics are subtle, and outside of performance-critical code, a `Mutex` or an actor is easier to get right.
+Every atomic operation names a *memory ordering*, which controls what the operation implies about the visibility of *other* reads and writes around it. `.relaxed` promises only that this one operation is indivisible, which is all a statistics counter needs. The stronger orderings (`.acquiring`, `.releasing`, `.acquiringAndReleasing`, `.sequentiallyConsistent`) are for building synchronization of your own, and they are difficult to use correctly. Unless profiling shows that a lock is a bottleneck, prefer a `Mutex` or an actor.
 
 ## 9.3. Actors
 
-An *actor* is a reference type, like a class, that protects its mutable state by allowing only one task at a time to execute its code. You can think of an actor as an object with its own private, built-in mutex, which is acquired automatically whenever one of its methods is called from outside. Or, equally, as a task that confines its state and serves requests from other tasks, like the broadcaster in Section 8.10, but with requests written as ordinary method calls.
+An *actor* is a reference type, declared much like a class, whose mutable state can be touched by only one task at a time. You can think of it in two ways, and both are useful. It's an object with a built-in lock that every outside call acquires automatically. It's also a task that owns some state and serves requests from others, like the room task in Section 8.10, except that the requests are ordinary method calls instead of hand-built event enums.
 
-Here's the bank as an actor:
+Here's the box office as an actor:
 
 ```swift
-// swiftpl/ch9/bank3
-actor Bank {
-    private var balance = 0
+// swiftpl/ch9/boxoffice3
+actor BoxOffice {
+    private var seatsLeft = 100
 
-    func deposit(_ amount: Int) {
-        balance += amount
+    func sell(_ n: Int) {
+        seatsLeft -= n
     }
 
-    func currentBalance() -> Int {
-        balance
+    func available() -> Int {
+        seatsLeft
     }
 
-    func withdraw(_ amount: Int) -> Bool {
-        guard balance >= amount else {
+    func book(_ n: Int) -> Bool {
+        guard seatsLeft >= n else {
             return false
         }
-        balance -= amount
+        seatsLeft -= n
         return true
     }
 }
 ```
 
-Inside the actor, code accesses `balance` freely, and methods call each other as usual; `withdraw` could even call `deposit` directly. This is because the actor's code always runs *isolated* to the actor: only one task at a time can be executing it.
+Inside the actor, nothing special is required. Methods read and write `seatsLeft` directly and call one another freely; `book` could call `available()` and `sell(_:)` without any risk of the deadlock that a mutex would cause. All of this code is *isolated* to the actor, meaning it only ever runs while the actor is serving one particular caller.
 
-From outside the actor, every access to its methods and mutable properties must be made with `await`, because the caller may have to wait its turn:
+Outside the actor, things are different. Every call into it is written with `await`, because the actor may be busy serving someone else:
 
 ```swift
-let bank = Bank()
+let office = BoxOffice()
 
-await withTaskGroup(of: Void.self) { group in
-    group.addTask { await bank.deposit(200) }  // Alice
-    group.addTask { await bank.deposit(100) }  // Bob
+await withTaskGroup(of: Bool.self) { group in
+    group.addTask { await office.book(2) }  // north window
+    group.addTask { await office.book(3) }  // south window
 }
-print(await bank.currentBalance())  // "300"
+print(await office.available())  // "95"
 ```
 
-The compiler enforces *actor isolation*. Code outside the actor can't touch `balance` directly at all, and code that calls an actor method must be asynchronous, so that it can suspend if the actor is busy. Meanwhile, a waiting caller doesn't block a thread; it suspends, freeing its thread to run other tasks, and the actor runs the queued calls one at a time.
+A caller waiting for an actor doesn't block a thread. It suspends, and its thread goes off to run other tasks. The actor works through its queued calls one at a time, and each caller resumes when its call completes.
 
-An actor's methods take and return values across an *isolation boundary*, so the compiler checks that the arguments and results are `Sendable`. An actor can't return a reference to a non-`Sendable` object it owns, since that would let other tasks modify the actor's state without isolation.
+The compiler polices the boundary. Outside code can't reach `seatsLeft` at all, and anything passed into or returned out of the actor must be `Sendable`. That last rule stops a subtle leak: if an actor could return a reference to a mutable, non-`Sendable` object it owned, other tasks could mutate the actor's state behind its back.
 
-Members of an actor that don't touch its mutable state can be marked `nonisolated`, which lets them be called synchronously from anywhere:
+Parts of an actor that don't depend on its mutable state can be declared `nonisolated` and used without `await`. Immutable `let` properties of `Sendable` type are already accessible that way:
 
 ```swift
-actor Bank {
-    let name: String  // immutable lets of Sendable type can be read without await
-    nonisolated var description: String { "Bank \(name)" }
+actor BoxOffice {
+    let venue: String  // a Sendable let: readable from anywhere
+    nonisolated var description: String { "Box office at \(venue)" }
     // ...
 }
 ```
 
 ### 9.3.1. The Main Actor and Global Actors
 
-Some state isn't owned by a single object but by a whole subsystem. The most important example is the user interface: on every platform, UI objects must be accessed only from the main thread. Swift represents this with a *global actor*, `MainActor`, whose executor is the main thread. Any declaration can be isolated to it with the `@MainActor` attribute:
+Some state belongs not to one object but to an entire subsystem. The standard example is the user interface. Every major UI toolkit insists that its objects be used only from the main thread. Swift models that rule with a *global actor*, `MainActor`, which runs everything isolated to it on the main thread. Marking a declaration `@MainActor` places it under that rule:
 
 ```swift
 @MainActor
@@ -289,81 +273,89 @@ final class ViewModel {
     var items: [String] = []
 
     func load() async {
-        let fetched = await fetchItems()  // runs elsewhere; we suspend here
-        items = fetched  // back on the main actor
+        let fetched = await fetchItems()  // the fetch runs elsewhere; we suspend here
+        items = fetched  // back on the main actor when we resume
     }
 }
 ```
 
-All methods and properties of `ViewModel` are now isolated to the main actor, and calls from other isolation domains need `await`. Top-level code in `main.swift` also runs on the main actor, as does an `@main` type's `main` method.
+Every method and property of `ViewModel` is now main-actor-isolated, so code running elsewhere must use `await` to reach it. Top-level code in `main.swift` and the `main` method of an `@main` type run on the main actor too.
 
-You can define your own global actors for other subsystems with `@globalActor`, though it's rarely necessary.
+The `@globalActor` attribute lets you declare global actors of your own, for other subsystems that need a single serial context. It's seldom needed.
 
 ## 9.4. Actor Reentrancy
 
-Actors make it impossible for two tasks to run the actor's code *at the same time*. But they don't make an actor method atomic if it contains an `await`. Whenever an actor method suspends, the actor is free to run other calls, which may change its state. This is called *actor reentrancy*, and it's the most important subtlety of actor programming.
+An actor guarantees that two tasks never execute its code *simultaneously*. It does *not* guarantee that a method runs from start to finish without interruption. Whenever an actor method reaches an `await`, it suspends, and while it's suspended the actor is free to serve other callers, who may change its state. When the first method resumes, the world may have moved on. This property is called *actor reentrancy*, and understanding it is the key to writing correct actors.
 
-Consider an extension to the bank that converts currency at the current exchange rate, which must be fetched from a remote server:
+Let's add payment to the box office. Before seats are sold, the customer's card must be authorized by a remote payment service, which takes a network round trip:
 
 ```swift
-extension Bank {
+extension BoxOffice {
     // NOTE: buggy!
-    func withdraw(_ amount: Int, in currency: String) async throws -> Bool {
-        guard balance >= amount else {
+    func book(_ n: Int, paidBy card: Card) async throws -> Bool {
+        guard seatsLeft >= n else {
             return false
         }
-        let rate = try await exchangeRate(for: currency)  // suspension point!
-        balance -= Int(Double(amount) * rate)
+        try await authorize(card, amount: n * ticketPrice)  // suspension point!
+        seatsLeft -= n
         return true
     }
 }
 ```
 
-The check `balance >= amount` happens before the `await`, and the update after it. While this method is suspended waiting for the exchange rate, other calls to `withdraw` can run on the actor and reduce the balance, so by the time this call resumes, the check it made is stale, and the balance can go negative. This is the same check-then-act race we saw with `withdraw` in Section 9.2, reappearing in a new form. The compiler doesn't catch it, because there's no data race: every access to `balance` is properly isolated. It's a *logical* race.
+This is the not-atomic `book` of Section 9.2.1 all over again. The method checks the seat count, then suspends while the payment service thinks. During that pause, other `book` calls run, pass the same check against the same count, and suspend in turn. When the authorizations come back, every one of them subtracts its seats, and the show is oversold. The compiler can't help here, because nothing is a data race: every access to `seatsLeft` happens on the actor. The bug is in the logic, which assumed the check still held after an `await`.
 
-The fix is to treat each `await` in an actor method as a point where any of the actor's state may change, and to arrange the code so that every invariant holds at each suspension point. Here, we should do the asynchronous work first, and then check and update the state in one synchronous stretch:
+The discipline that avoids it is simple to state: *at every `await`, the actor's invariants must hold, and anything you learned before the `await` may be out of date after it.* For a booking, the natural fix is the one real ticket systems use. Hold the seats *before* suspending, then release them if the payment fails:
 
 ```swift
-extension Bank {
-    func withdraw(_ amount: Int, in currency: String) async throws -> Bool {
-        let rate = try await exchangeRate(for: currency)
-        // No suspension points from here to the end: this part is atomic.
-        let converted = Int(Double(amount) * rate)
-        guard balance >= converted else {
+extension BoxOffice {
+    func book(_ n: Int, paidBy card: Card) async throws -> Bool {
+        guard seatsLeft >= n else {
             return false
         }
-        balance -= converted
+        seatsLeft -= n  // hold the seats before we suspend
+        do {
+            try await authorize(card, amount: n * ticketPrice)
+        } catch {
+            seatsLeft += n  // payment failed: release the hold
+            throw error
+        }
         return true
     }
 }
 ```
 
-Why are actors reentrant, if it causes such problems? Because the alternative is worse. A non-reentrant actor would be locked for the whole duration of each call, including all its awaits, so a slow network request would block every other use of the actor. And two non-reentrant actors that called each other would deadlock. Reentrancy keeps actors deadlock-free, at the price of requiring care at every `await`.
+Now the check and the update happen together, with no `await` between them, so no other booking can see the old count. While a payment is pending, the held seats are unavailable to anyone else, which is exactly the behavior customers expect.
+
+Another common fix is to do the asynchronous work first and the check-and-update afterward, so that all the state changes happen in one uninterrupted stretch. Which one fits depends on the problem. What doesn't change is that each `await` in an actor method is a place where you must stop and ask what could have changed.
+
+If reentrancy causes this much trouble, why allow it? Because a non-reentrant actor would be worse. It would stay locked for the entire duration of every call, including every network wait inside it, so one slow request would stall all other users of the actor. And two non-reentrant actors that called each other would deadlock immediately. Reentrancy keeps actors responsive and deadlock-free; the price is the discipline above.
 
 ## 9.5. Lazy Initialization
 
-It is good practice to defer an expensive initialization step until the moment it is needed. Initializing a variable up front increases the start-up latency of a program and is unnecessary if execution doesn't always reach the part of the program that uses that variable. Let's return to the `icons` variable we saw earlier in the chapter. Suppose loading the icons is slow, and we'd like to do it only on first use.
+Some values are expensive to compute and not always needed: a large lookup table, a parsed configuration file, a compiled regular expression. It's better to create such a value the first time it's used than to pay for it at startup.
 
-In Go, this requires care: a naïve `if icons == nil { loadIcons() }` is a data race, and the fix is `sync.Once`. In Swift, it's free. As we saw in Section 2.6, global variables and static properties are always initialized lazily, on first access, and the language guarantees that the initialization runs exactly once, even if several threads access the variable for the first time simultaneously:
+Lazy initialization is a classic source of races in other languages. The obvious code, "if the table is nil, build it," lets two tasks both see nil and both build it, or worse, lets one task see a half-built table. Swift sidesteps the problem. As noted in Section 2.6, every global variable and every static property is initialized lazily, on first access, and the runtime guarantees that initialization happens exactly once, even when several threads arrive at the same moment:
 
 ```swift
-let icons: [String: Image] = loadIcons()  // in a file other than main.swift
+// in a file other than main.swift
+let statusReasons: [Int: String] = loadStatusTable()  // reads a large data file
 
 /// Concurrency-safe.
-func icon(_ name: String) -> Image? {
-    icons[name]
+func reason(for status: Int) -> String {
+    statusReasons[status] ?? "Unknown"
 }
 ```
 
-The first call to `icon`, from whatever task, triggers `loadIcons()`; any other task that calls `icon` at the same time waits for it to finish. Every later call just reads the dictionary. Static properties behave the same way, which makes `static let shared = ...` the standard idiom for a lazily created, thread-safe singleton.
+The first call to `reason(for:)` runs `loadStatusTable()`; any task that arrives while that's in progress waits for it; every later call simply reads the finished dictionary. Static properties work the same way, which is why `static let shared = ...` is the conventional way to create a lazily initialized singleton.
 
-Instance properties can be declared `lazy var`, which also defers initialization until first access. But a `lazy var` is *not* thread-safe: two tasks accessing it simultaneously could both run the initializer. Since it's a mutable property, the usual concurrency rules apply, and the compiler won't let you share an object with a `lazy var` between tasks without protection.
+An instance property declared `lazy var` is also initialized on first use, but it offers no such guarantee. Two tasks reading it at once could both run its initializer. Since a `lazy var` is mutable state, the usual rules apply, and the compiler won't let an object that has one be shared between tasks unless something protects it.
 
-When lazy initialization must be asynchronous, for example when the value is fetched over the network, neither of these will do, since a global's initializer can't `await`. The solution is an actor that caches a `Task`, which we'll see in Section 9.7.
+Neither mechanism works when building the value requires `await`, such as fetching it from a server, since a global's initializer must be synchronous. For that, keep a `Task` that produces the value inside an actor. Section 9.7 shows how.
 
 ## 9.6. Strict Concurrency Checking and the Thread Sanitizer
 
-Even with the greatest of care, it's all too easy to make concurrency mistakes. That's why Swift checks for data races at compile time. In the Swift 6 language mode, which is the default for new packages with `swift-tools-version: 6.0` or later, violations of data-race safety are errors. In the Swift 5 language mode, the same checks can be enabled as warnings, which is useful for migrating existing code a module at a time:
+Concurrency bugs are hard to find by testing, which is why Swift tries to stop them at compile time. In the Swift 6 language mode, the default for packages whose manifest declares `swift-tools-version: 6.0` or later, any code that could race is a compile error. Code built in the Swift 5 language mode can opt in to the same checks as warnings, which makes it possible to migrate a large codebase one module at a time:
 
 ```swift
 // In Package.swift
@@ -376,23 +368,23 @@ Even with the greatest of care, it's all too easy to make concurrency mistakes. 
 )
 ```
 
-The compile-time checks have escape hatches, for situations where the programmer knows something the compiler can't verify: `@unchecked Sendable` for a class that protects its state with its own lock, `nonisolated(unsafe)` for a global variable, `@preconcurrency import` for a module that hasn't adopted `Sendable` annotations yet, and `MainActor.assumeIsolated` for code that's known to run on the main thread. Each of these is a promise that, if broken, can result in a data race.
+The checks can be overridden where the programmer knows something the compiler can't prove. `@unchecked Sendable` vouches for a class that synchronizes itself. `nonisolated(unsafe)` exempts a global variable. `@preconcurrency import` silences diagnostics about a library that predates `Sendable`, and `MainActor.assumeIsolated` asserts that some code already runs on the main thread. Each of these is a promise. If the promise is false, the race the compiler would have caught is back.
 
-To catch races in code that uses these escape hatches, or in C and C++ code called from Swift, use the *Thread Sanitizer* (TSan). It instruments every memory access in the program, records which thread accessed which memory and under what synchronization, and reports any access to the same location from two threads without an intervening synchronization event:
+For code that uses these escape hatches, and for C and C++ code that the Swift compiler can't check at all, there's a dynamic tool: the *Thread Sanitizer* (TSan). A program built with TSan records, for every memory access, which thread made it and which synchronization operations preceded it, and reports any pair of conflicting accesses that weren't ordered by synchronization:
 
 ```
 $ swift build --sanitize=thread
 $ swift test --sanitize=thread
 ```
 
-Here's a program that lies to the compiler, and what TSan says about it:
+Here's a deliberate lie to the compiler, and the result of running it under TSan:
 
 ```swift
-nonisolated(unsafe) var counter = 0
+nonisolated(unsafe) var hits = 0
 
 await withTaskGroup(of: Void.self) { group in
     for _ in 0..<2 {
-        group.addTask { counter += 1 }
+        group.addTask { hits += 1 }
     }
 }
 ```
@@ -404,26 +396,26 @@ WARNING: ThreadSanitizer: Swift access race (pid=48233)
     #0 closure #1 in closure #1 in race main.swift:6
   Previous modifying access of Swift variable at 0x0001049c8030 by thread T1:
     #0 closure #1 in closure #1 in race main.swift:6
-  Location is global 'counter' of size 8 at 0x0001049c8030
+  Location is global 'hits' of size 8 at 0x0001049c8030
 ==================
 ```
 
-The report includes the identities of the threads involved and their stacks, which is usually enough to pinpoint the problem. Like Go's race detector, TSan reports only races that actually occur during a run, so it's only as good as your tests. And it adds significant overhead, so it's not suitable for production builds. But in combination with Swift 6's compile-time checking, it covers nearly all the ways a data race can arise.
+(The addresses, thread numbers, and process ID will differ on your machine.) The report pinpoints both accesses and the variable involved. TSan has limits: it finds only races that actually happen during the run being observed, so it's no better than the tests that drive it, and it slows the program considerably. It's a debugging and testing tool, not something to ship. Used together with the compiler's static checks, though, it closes nearly every gap.
 
 ## 9.7. Example: Concurrent Non-Blocking Cache
 
-In this section, we'll build a *concurrent non-blocking cache*, an abstraction that solves a problem that arises often in real-world concurrent programs but is not well addressed by existing libraries. This is the problem of *memoizing* a function, that is, caching the result of a function so that it need be computed only once. Our solution will be concurrency-safe and will avoid the contention associated with designs based on a single lock for the whole cache.
+We'll finish the chapter's examples with a problem that shows up in nearly every server: *memoization*, caching the result of an expensive function so that repeated calls with the same argument don't redo the work. Our target is a cache that many tasks can use at once, that never makes one key wait on another key's computation, and that never computes the same key twice, even when several tasks ask for it at the same moment.
 
-We'll use the `httpGetBody` function below as an example of the type of function we might want to memoize. It makes an HTTP GET request and returns the response body. Calls to this function are relatively expensive, so we'd like to avoid repeating them unnecessarily.
+As the expensive function, we'll use an HTTP fetch:
 
 ```swift
-@Sendable func httpGetBody(_ url: String) async throws -> Data {
+@Sendable func fetchBody(_ url: String) async throws -> Data {
     let (data, _) = try await URLSession.shared.data(from: URL(string: url)!)
     return data
 }
 ```
 
-Here's the first draft of the cache:
+The simplest cache is a class with a dictionary. It stores a `Result` (Section 5.10) for each key, so that a failure is remembered as well as a success:
 
 ```swift
 // swiftpl/ch9/memo1
@@ -455,13 +447,11 @@ final class Memo<Key: Hashable, Value> {
 }
 ```
 
-A `Memo` instance holds the function `f` to memoize, of type `Function`, and the cache, which is a dictionary from keys to `Result`s (Section 5.10), so that errors are cached along with values.
-
-Here's how to use `Memo`. For each element in a stream of incoming URLs, we call `get`, logging the latency of the call and the amount of data it returns:
+Used from a single task, it does its job. Here's a driver that fetches a list of URLs containing repeats and reports how long each `get` took:
 
 ```swift
-let m = Memo(httpGetBody)
-for url in incomingURLs() {
+let m = Memo(fetchBody)
+for url in urlsToFetch() {
     let start = ContinuousClock.now
     do {
         let value = try await m.get(url)
@@ -472,7 +462,7 @@ for url in incomingURLs() {
 }
 ```
 
-We can use a test harness to investigate the effect of memoization. From the output below, we see that the URL stream contains duplicates, and that although the first call to `m.get` for each URL takes hundreds of milliseconds, the second request returns the same amount of data in under a millisecond:
+A typical run shows the cache working: repeats come back almost instantly. (Your timings and sizes will differ.)
 
 ```
 https://www.swift.org, 0.175026 seconds, 21342 bytes
@@ -483,11 +473,11 @@ https://forums.swift.org, 0.000001 seconds, 86104 bytes
 https://swiftpackageindex.com, 0.000001 seconds, 148203 bytes
 ```
 
-The test above executes all the calls to `get` sequentially. Since HTTP requests are a great opportunity for parallelism, let's change the test so that it makes all requests concurrently, each in its own child task:
+But the fetches happen one after another, which wastes the opportunity to overlap them. So let's issue them all at once, one child task per URL:
 
 ```swift
 await withTaskGroup(of: Void.self) { group in
-    for url in incomingURLs() {
+    for url in urlsToFetch() {
         group.addTask {
             let start = ContinuousClock.now
             let value = try? await m.get(url)  // error: capture of non-sendable type 'Memo<String, Data>'
@@ -497,9 +487,11 @@ await withTaskGroup(of: Void.self) { group in
 }
 ```
 
-In Go, the equivalent program compiles and runs, and usually seems to work, but occasionally crashes or corrupts the cache, because `get` makes unsynchronized accesses to the map. Go's race detector would find the bug if a test happened to exercise it. In Swift 6, the program doesn't compile. `Memo` is a class with mutable state, so it isn't `Sendable`, and it can't be captured by a closure that runs in a child task. We have to make it concurrency-safe.
+This doesn't compile, and that's the compiler doing its job. `Memo` is a class with an unprotected mutable dictionary, so concurrent calls to `get` would race on it. In a language without static race checking, this program would build, pass a casual test, and then corrupt its cache now and then in production. Here, we're forced to decide how the cache will be shared before the program can run at all.
 
-The simplest way to make the cache concurrency-safe is to use monitor-based synchronization, with a `Mutex` around the dictionary:
+### 9.7.1. A Cache with a Lock
+
+The first fix that comes to mind is a mutex around the dictionary:
 
 ```swift
 // swiftpl/ch9/memo2
@@ -529,11 +521,15 @@ final class Memo<Key: Hashable & Sendable, Value: Sendable>: Sendable {
 }
 ```
 
-Now the compiler is satisfied, and the concurrent requests make the overall test run much faster. Notice that we take the lock twice: once to look up the key, and again to store the result. We *couldn't* hold the lock during the call to `f`, because `withLock`'s closure is synchronous and can't `await`, and even if we could, it would serialize all the calls to `f`, defeating the purpose.
+This compiles, and the concurrent version of the driver runs much faster than the sequential one. Look closely at how the lock is used, though. It's taken once to check the cache and again to store the result, and released in between, while `f` runs. It has to be: `withLock` won't let us `await` inside it, and holding the lock during a slow fetch would make every other key wait behind it anyway.
 
-Unfortunately, this means that when two tasks call `get` for the same URL at about the same time, both see that the cache has no entry, both call the slow function `f`, and both store the result, the second overwriting the first. The program is correct, but it does redundant work. Ideally, we'd like to avoid this *duplicate suppression* problem.
+The gap between the check and the store has a cost. If two tasks ask for the same URL at nearly the same moment, both find nothing in the cache, both fetch the page, and both store the result. Nothing is corrupted, since the second store merely overwrites the first with an equal value, but the work is done twice. For an expensive function, that's exactly what a cache is supposed to prevent.
 
-The solution is to cache not the *result* of the function, but the *task* that computes it. A `Task` represents work that is in progress or finished; any number of other tasks can await its `value`, and all of them receive the same result. The first task to request a key creates the task and stores it in the cache; later requesters find the task and wait for it. And to make the check and the store happen atomically, we'll use an actor:
+### 9.7.2. Caching the Work, Not the Answer
+
+The way out is to cache something that exists *before* the answer does: the work in progress. A `Task` is a handle to a computation that may still be running. Any number of tasks can await its `value`, and all of them receive the same result when it's ready. So instead of storing results, we store tasks. The first caller for a key starts the computation and records the task; anyone who arrives later, whether the computation has finished or not, finds the task and waits on it.
+
+For this to work, checking for an existing task and recording a new one must happen as a single atomic step. An actor gives us that:
 
 ```swift
 // swiftpl/ch9/memo3
@@ -562,11 +558,11 @@ actor Memo<Key: Hashable & Sendable, Value: Sendable> {
 }
 ```
 
-Let's check this design against the reentrancy rule from Section 9.4. There are two suspension points in `get`: the two `await task.value` expressions. The check `cache[key]`, the creation of the task, and the store `cache[key] = task` all happen with no `await` in between, so they're atomic with respect to other calls on the actor. A second call to `get` for the same key, even one that arrives while the first is suspended awaiting the result, will find the task in the cache, and await the same task. Because the actor is suspended, not blocked, while waiting, calls for *other* keys proceed concurrently; the slow function `f` runs in its own task, outside the actor, so many calls to `f` can be in progress at once.
+Apply the reentrancy test from Section 9.4. The method's only suspension points are the two `await task.value` lines. The lookup, the creation of the task, and the store into `cache` all happen between suspension points, so no other call on the actor can run in the middle of them. A second request for the same key, even one that arrives while the first caller is still waiting, will find the stored task and wait on it rather than starting another fetch.
 
-The capture list `[f]` captures the function value itself, rather than `self`, so that the new task needn't hop onto the actor to read the property.
+The actor doesn't become a bottleneck either. The expensive function runs in its own task, not on the actor; callers waiting for results are suspended, not holding the actor. So the actor is busy only for the brief bookkeeping in `get`, and fetches for different keys proceed fully in parallel. The capture list `[f]` copies the function into the new task, so that the task never needs to visit the actor to read the property.
 
-Compare this with the Go version of the same cache, which needs a mutex, a map of entries, each with a `ready` channel that is closed when the result is available, and a careful dance of unlocking and locking to avoid holding the mutex during the call to `f`. In Swift, `Task` already provides what the entry type and the `ready` channel do, and the actor provides what the mutex does. The design is the same; the language just has the pieces built in.
+Run the concurrent driver against this version and the pattern of the output changes:
 
 ```
 https://www.swift.org, 0.176201 seconds, 21342 bytes
@@ -577,56 +573,58 @@ https://swiftpackageindex.com, 0.640027 seconds, 148203 bytes
 https://swiftpackageindex.com, 0.640190 seconds, 148203 bytes
 ```
 
-Now the duplicate requests take about the same time as the original ones, because they waited for them, but only one HTTP request was made for each URL.
+Each duplicate request now takes as long as the original, because it waited for the original, but each URL was fetched exactly once.
 
-**Exercise 9.1:** The standard library's `Result(catching:)` initializer takes a synchronous closure. Write an `async` overload of it, and use it to shorten `memo1` and `memo2`.
+This pattern of memoizing *tasks* rather than values is worth remembering. It's the standard Swift answer to many problems that look like "lazy initialization, but asynchronous": loading a configuration once, establishing a single shared connection, refreshing an authentication token without a stampede of concurrent refreshes.
 
-**Exercise 9.2:** Extend the `Memo` actor so that the caller may provide an optional cancellation for a request: if the task that requested a value is cancelled, its wait should end. Should the shared computation be cancelled too? What if other callers are still waiting for it?
+**Exercise 9.1:** The standard library's `Result(catching:)` initializer takes a synchronous closure. Write an `async` overload, and use it to simplify `memo1` and `memo2`.
 
-**Exercise 9.3:** Add a maximum size to the cache, evicting the least recently used entry when it is full. Take care not to evict entries whose tasks are still running.
+**Exercise 9.2:** If a caller of `get` is cancelled, it should stop waiting. Should cancelling one caller cancel the shared computation? What if other callers are still waiting for it? Implement the policy you choose.
 
-**Exercise 9.4:** Write a version of the cache in which failed results are not cached, so that a later request retries the operation.
+**Exercise 9.3:** Give the cache a maximum size, evicting the least recently used entry when it's full. Be careful not to evict an entry whose task is still running.
+
+**Exercise 9.4:** Change the cache so that failures aren't remembered, and a later `get` for the same key tries again.
 
 ## 9.8. Tasks and Threads
 
-In the previous chapter, we said that the difference between tasks and operating system (OS) threads could be ignored until later. Although the differences between them are essentially quantitative, a big enough quantitative difference becomes a qualitative one, and so it is with tasks and threads. The time has now come to distinguish them.
+In Chapter 8 we said that a task could be thought of as a cheap thread. That approximation is good enough for writing correct programs. To write efficient ones, and to understand a few rules that would otherwise seem arbitrary, it helps to know how tasks actually run.
 
 ### 9.8.1. Stacks and Frames
 
-Each OS thread has a fixed-size block of memory (often as large as 8 MB) for its *stack*, the work area where it saves the local variables of function calls that are in progress or temporarily suspended while another function is called. This fixed-size stack is simultaneously too much and too little. An 8 MB stack is a big waste of memory for a little task that just waits for a network response. It's not uncommon for a server to have tens of thousands of connections in progress at once, which would be impossible with a thread for each.
+An operating-system thread is reserved a fixed region of memory for its call stack when it's created: commonly 512 KB to 8 MB, mostly unused. A server that dedicated a thread to each of 50,000 idle connections would reserve gigabytes of address space for stacks that hold almost nothing. And the fixed size cuts the other way as well: a thread that recurses too deeply overflows its stack and crashes.
 
-A Swift task doesn't have a stack of its own. While an `async` function is *running*, it uses the stack of whatever thread it's running on, like an ordinary function. When it *suspends*, the state that must survive the suspension (the local variables that are still needed, and the point at which to resume) is saved in an *async frame*, a heap-allocated block of exactly the right size. Tasks that are suspended thus cost only as much memory as their saved state, often just a few hundred bytes, so a program can easily have a hundred thousand tasks.
+Tasks avoid the first problem by not owning stacks at all. A running `async` function borrows the stack of whatever thread is executing it, exactly as a synchronous function does. Only when it suspends does Swift copy the state it will need afterward (the live local variables and where to resume) into a heap-allocated *async frame* sized for that function. A suspended task therefore costs roughly what it has to remember, often a few hundred bytes. That's why programs can have so many of them.
 
 ### 9.8.2. Scheduling
 
-OS threads are scheduled by the OS kernel. Every few milliseconds, a hardware timer interrupts the processor, which causes the kernel to suspend the currently executing thread and save its registers in memory, look over the list of threads and decide which one should run next, restore that thread's registers from memory, then resume the execution of that thread. Because OS threads are scheduled by the kernel, passing control from one thread to another requires a full *context switch*, which is slow.
+Operating-system threads are scheduled by the kernel. Switching from one thread to another means entering the kernel, saving one set of registers, choosing a successor, and restoring another set, a *context switch* that costs on the order of microseconds and disturbs the processor's caches.
 
-Swift's runtime contains its own scheduler. Tasks run on *executors*. Most tasks run on the *global concurrent executor*, which runs tasks on the cooperative thread pool, with one thread per CPU core. Each actor has a *serial executor*, which runs its code one task at a time (usually borrowing threads from the same pool). The main actor's executor is the main thread. When a task suspends, it simply returns to the executor, which picks the next runnable task, without any kernel involvement. Switching between tasks is about as cheap as a function call.
+Swift tasks are scheduled by the Swift runtime, onto *executors*. Ordinary tasks use the *global concurrent executor*, which runs them on a pool of threads sized to the number of CPU cores. Each actor has a *serial executor* that runs one of its jobs at a time, usually on a thread borrowed from that same pool, and the main actor's executor is the main thread. When a task suspends, it simply returns control to its executor, which picks up the next ready job, all without involving the kernel. Switching tasks costs about as much as a function call.
 
-The fixed size of the cooperative pool has an important consequence that we noted in Section 8.5: a task that *blocks* (by waiting on a semaphore, a condition variable, a blocking read, or a long computation with no suspension points) takes a whole thread out of the pool. If all the threads block, every task in the program stalls. Go's runtime avoids this by creating more threads when goroutines block in system calls; Swift's does not. So in Swift, it's important that tasks always make *forward progress*: don't block a task waiting for another task to do something; `await` it instead. Long CPU-bound loops should occasionally call `await Task.yield()` so that other tasks get a turn.
+The pool's fixed size is a deliberate choice, and it explains a rule we've met twice already. A task that *blocks* its thread (by sleeping with a blocking call, waiting on a semaphore, performing slow synchronous I/O, or running a long computation without ever suspending) takes that thread out of the pool for as long as it blocks. Block enough threads and every task in the program stalls, even ones with work ready to do. Some runtimes compensate by quietly adding threads when others block; Swift's doesn't, in exchange for predictable, low overhead. So Swift code should keep tasks moving: `await` rather than block, use asynchronous I/O where it matters, and have long computations call `await Task.yield()` now and then to give other tasks a turn.
 
 ### 9.8.3. Isolation and Where Code Runs
 
-Whether a piece of code runs on the main thread, on an actor, or on the global executor is determined by its *isolation*, which is part of its declaration: a method of an actor runs on that actor, a `@MainActor` function on the main actor, and a `nonisolated` async function on the global executor. A closure passed to `Task { }` inherits the isolation of the code that creates it, which is why the spinner in Section 8.1 needed `Task.detached` to get off the main actor.
+Which executor a piece of code runs on follows from its *isolation*, which is part of its declaration. A method of an actor runs on that actor; a `@MainActor` declaration runs on the main actor; a `nonisolated` asynchronous function runs on the global executor. A closure passed to `Task { }` takes on the isolation of the code that created it. That's why the progress reporter in Section 8.1 used `Task.detached`: top-level code runs on the main actor, and a plain `Task` would have queued the reporter behind the computation that was occupying the main thread.
 
-Swift 6.2 adjusted these defaults to make concurrency easier to adopt. With the "approachable concurrency" settings that are enabled by default in new app projects, a `nonisolated` async function runs on the *caller's* actor rather than switching to the global executor, and a function must be marked `@concurrent` to run on the global executor explicitly. Modules can also choose to make `@MainActor` the default isolation for all their code, which suits app targets that do most of their work on the main thread. Packages written for the Swift 6.0 defaults continue to compile unchanged; the new behavior is opt-in per module.
+Swift 6.2 revised some of these defaults to make concurrency easier to adopt. Under the "approachable concurrency" settings, which new app projects enable, a `nonisolated` asynchronous function runs on its *caller's* executor instead of hopping to the global one, and a function that should always run on the global executor is marked `@concurrent`. A module can also make `@MainActor` its default isolation, a good fit for app code that mostly lives on the main thread. These are per-module settings; packages written against the Swift 6.0 behavior keep compiling as before.
 
-### 9.8.4. Tasks Have No Identity
+### 9.8.4. No Task Identity, but Task-Local Values
 
-In most operating systems and programming languages that support multithreading, the current thread has a distinct identity that can be easily obtained as an ordinary value, typically an integer or pointer. This makes it easy to build an abstraction called *thread-local storage*, which is essentially a global map keyed by thread identity, so that each thread can store and retrieve values independent of other threads.
+Threads usually have identities: a thread ID you can ask for and use as a key. Many systems build *thread-local storage* on top of that, giving each thread its own copy of certain variables.
 
-Swift tasks have no identity accessible to the programmer, and a task may run on different threads at different times, so thread-local storage is meaningless for them. Instead, Swift provides *task-local values*, which are declared with the `@TaskLocal` property wrapper, bound for the duration of a scope, and inherited by child tasks:
+Swift tasks expose no identity, and since a task can resume on a different thread after every suspension, thread-local storage doesn't mean anything to it. What Swift offers instead is *task-local values*. A task-local is declared with the `@TaskLocal` property wrapper, given a value for the duration of a closure with `withValue`, and visible to everything that runs within that scope, including child tasks:
 
 ```swift
-enum Request {
-    @TaskLocal static var id: String = "none"
+enum Trace {
+    @TaskLocal static var requestID: String = "none"
 }
 
-await Request.$id.withValue("req-42") {
-    await handle()  // handle and any child tasks it creates see Request.id == "req-42"
+await Trace.$requestID.withValue("req-42") {
+    await handle()  // handle, and any child tasks it starts, see Trace.requestID == "req-42"
 }
 ```
 
-Task-locals are useful for cross-cutting values like request IDs for logging and tracing, which should flow through a call tree without being passed explicitly as parameters to every function. Like Go, though, Swift encourages a simpler style of programming in which parameters that affect the behavior of a function are explicit, so task-locals should be used sparingly.
+Task-locals are well suited to context that cuts across many layers, such as request IDs for logging and tracing spans, where threading an extra parameter through every function would be noise. For anything that changes what a function computes, explicit parameters are clearer, and task-locals should be the exception.
 
-We've now learned all the language features we need for writing concurrent programs in Swift. In the next two chapters, we'll step back and look at some of the techniques and tools that support programming in the large in Swift.
+That completes the language features for concurrency. The next two chapters turn to the tools around the language: organizing code into packages, and testing it.

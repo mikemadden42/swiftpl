@@ -90,7 +90,7 @@ Example programs carry a label such as `swiftpl/ch1/helloworld`, which names the
 **[8. Tasks and Asynchronous Sequences](ch08-tasks.md)**
 - 8.1 Tasks and `async`/`await`
 - 8.2 Example: Concurrent Clock Server
-- 8.3 Example: Concurrent Echo Server
+- 8.3 Example: Concurrent Reminder Server
 - 8.4 Async Streams
 - 8.5 Looping in Parallel
 - 8.6 Example: Concurrent Web Crawler
