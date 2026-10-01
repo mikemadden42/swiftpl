@@ -76,7 +76,7 @@ If you don't have Swift, or need a newer version, follow the instructions at `ht
 
 ## Where to Find More Information
 
-The official site, `https://www.swift.org`, is the place to start. It links to the language's official guide and reference, *The Swift Programming Language* (a different work from this one, despite the shared title), to documentation for the standard library, and to guides for server, command-line, and embedded development.
+The official site, `https://www.swift.org`, is the place to start. It links to documentation for the standard library, to guides for server, command-line, and embedded development, and to the language's official guide and reference, *The Swift Programming Language*. That's Apple's comprehensive description of the language, and a good companion to this book.
 
 The Swift Evolution repository, `https://github.com/swiftlang/swift-evolution`, holds every proposal for changing the language, each with its motivation, design, and the alternatives considered. When you want to know why Swift works the way it does, the relevant proposal is usually the best explanation available. The Swift Forums, `https://forums.swift.org`, are where proposals are discussed and where questions are answered, often by the people who built the feature.
 

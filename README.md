@@ -1,4 +1,4 @@
-# The Swift Programming Language
+# Programming in Swift
 
 *A book about Swift 6, modeled on the structure of Donovan & Kernighan's* The Go Programming Language.
 
