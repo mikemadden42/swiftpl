@@ -621,7 +621,7 @@ let exporters: [Exporter] = [
     HTMLExporter(),  // inherited convenience initializer: title "Untitled"
 ]
 for exporter in exporters {
-    print(exporter.export(["First point.", "Second point."]))
+    print(exporter.export(["First point.", "Second point."]), terminator: "")
 }
 ```
 
@@ -665,7 +665,7 @@ A class has two kinds of initializers. A *designated* initializer, the ordinary 
 
 Initialization happens in two phases. In *phase 1*, each class in the hierarchy, from the most derived up to the root, initializes the stored properties it introduced. That's why `HTMLExporter`'s initializer sets `stylesheet` *before* calling `super.init`. Until phase 1 completes, the object isn't fully formed, so the compiler forbids calling methods, reading inherited properties, or otherwise using `self`. Once the root class's initializer has run, *phase 2* begins: control returns down the chain, and each initializer may now use `self` freely, calling methods and customizing inherited properties. This ordering guarantees that no method, not even an overridden one called from a superclass's initializer, ever sees an uninitialized property. Languages that skip such a rule allow exactly that bug.
 
-Subclasses don't automatically inherit their superclass's initializers, since an inherited initializer wouldn't know how to set the subclass's new properties. Two rules say when they do. If a subclass adds no designated initializers of its own (and gives all its new properties default values), it inherits all of the superclass's designated initializers, as `MarkdownExporter` inherits `init(title:)`. And if a subclass provides every one of its superclass's designated initializers, by inheriting or overriding them, it also inherits all of the superclass's convenience initializers. `HTMLExporter` overrides `init(title:)` (as a convenience initializer that supplies a default stylesheet), so it inherits `Exporter`'s convenience `init()`, and `HTMLExporter()` works.
+Subclasses don't automatically inherit their superclass's initializers, since an inherited initializer wouldn't know how to set the subclass's new properties. Two rules say when they do. If a subclass adds no designated initializers of its own (and gives all its new properties default values), it inherits all of the superclass's designated initializers, as `MarkdownExporter` inherits `init(title:)`. And if a subclass provides every one of its superclass's designated initializers, by inheriting or overriding them, it also inherits all of the superclass's convenience initializers. `HTMLExporter` overrides `init(title:)` (as a convenience initializer that supplies no stylesheet), so it inherits `Exporter`'s convenience `init()`, and `HTMLExporter()` works.
 
 An initializer marked `required` must be implemented by every subclass. That matters when code creates instances through a type that might be a subclass, for example in a factory method that returns `Self`:
 
@@ -841,7 +841,7 @@ print(t.$target)  // "[20.0, 21.0, 19.5]"
 
 ### 6.8.4. Using Wrappers Well
 
-Property wrappers can be applied to stored properties of structs, classes, and enums, and to local variables. They can't be applied to computed properties or used in protocol requirements, and a wrapped property can't also be `lazy`.
+Property wrappers can be applied to stored properties of structs and classes, to local variables, and to function and closure parameters. They can't be applied to computed properties or used in protocol requirements, and a wrapped property can't also be `lazy`.
 
 Their power is also their risk: a wrapper changes what assignment *means*, invisibly at the point of use. `s.volume = 20` followed by `print(s.volume)` printing `11` is surprising unless you've seen the declaration. Wrappers work best for behavior that's simple, predictable, and clearly named, such as clamping, trimming, or recording, and for frameworks whose wrappers are widely understood. Complicated business logic is usually clearer as an ordinary method or a property observer (Section 6.6).
 
@@ -948,7 +948,7 @@ Usually this doesn't matter. It does matter when an object's `deinit` undoes som
 
 Reference counting has a cost. Each increment and decrement is an atomic operation, since references can be shared between threads, and code that copies references in a tight loop can spend noticeable time on them. The optimizer removes many of these operations, and profiling (Section 11.5) shows when the rest matter. Value types avoid the cost entirely, which is one more reason Swift code starts with structs.
 
-To find leaks, Xcode's memory graph debugger shows the objects alive in a running program and the references between them, and the Instruments Leaks template reports unreachable cycles. A test can check for leaks directly, by holding only a weak reference to an object and expecting it to be `nil` once the strong references are gone:
+To find leaks, Xcode's memory graph debugger shows the objects alive in a running program and the references between them, and the Instruments Leaks template reports unreachable cycles. A test can check for leaks directly, by holding only a weak reference to an object and expecting it to be `nil` once the strong references are gone. With the `[weak self]` fix in place, this test passes; without it, it fails:
 
 ```swift
 @Test func counterIsFreed() {
