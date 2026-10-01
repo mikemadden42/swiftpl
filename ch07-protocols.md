@@ -89,7 +89,7 @@ struct CountingStream<Base: TextOutputStream>: TextOutputStream { ... }
 func countingStream<S: TextOutputStream>(_ base: S) -> CountingStream<S>
 ```
 
-**Exercise 7.3:** Write a `description` property for the `Tree` type from Section 4.4 that reveals the sequence of values in the tree.
+**Exercise 7.3:** Make the `FileNode` type from Section 4.4 conform to `CustomStringConvertible`, with a `description` that shows the tree with indentation, as `printTree` does.
 
 ## 7.2. Protocol Types
 
@@ -369,7 +369,7 @@ Error: The value '273.15K' is invalid for '--temp <temp>'
 
 **Exercise 7.5:** Add support for Kelvin temperatures to `tempflag`.
 
-**Exercise 7.6:** `ExpressibleByArgument` has another requirement, `static var allValueStrings: [String]`, with a default of `[]`. Find out what it's for, and use it to make a flag that accepts the name of a `Weekday` (Section 3.6). Is there an easier way to do this for a `CaseIterable` enum?
+**Exercise 7.6:** `ExpressibleByArgument` has another requirement, `static var allValueStrings: [String]`, with a default of `[]`. Find out what it's for, and use it to make a flag that accepts the name of a `Suit` (Section 3.6). Is there an easier way to do this for a `CaseIterable` enum?
 
 ## 7.5. Existential Values: `any` and `some`
 
@@ -1072,15 +1072,15 @@ log(10)             unknown function "log"
 sqrt(1, 2)          call to sqrt has 2 args, want 1
 ```
 
-Separating checking from evaluation means that an expression can be checked once and then evaluated many times. That's exactly what we'll do next: we'll use the evaluator to plot arbitrary functions with the `surface` program from Section 3.2. The program takes an expression on the command line, parses and checks it, and then plots it, using an environment that binds `x` and `y` to the coordinates of each point and `r` to the distance from the origin:
+Separating checking from evaluation means that an expression can be checked once and then evaluated many times. That's exactly what we'll do next: we'll use the evaluator to plot arbitrary functions with the `heatmap` program from Section 3.2.1. The program takes an expression on the command line, parses and checks it, and then plots it, using an environment that binds `x` and `y` to the coordinates of each cell and `r` to its distance from the origin:
 
 ```swift
-// swiftpl/ch7/surface
-// Surface plots the function given on the command line as an SVG surface.
+// swiftpl/ch7/heatmap
+// Heatmap plots the function given on the command line as an SVG heat map.
 import Foundation
 
 guard CommandLine.arguments.count == 2 else {
-    printError("usage: surface 'expression in x, y, and r'")
+    printError("usage: heatmap 'expression in x, y, and r'")
     exit(2)
 }
 let expr = parseAndCheck(CommandLine.arguments[1])
@@ -1105,12 +1105,12 @@ func parseAndCheck(_ input: String) -> Expr {
 }
 ```
 
-Here `plot` is the main loop of the original `surface` program, refactored into a function that takes the surface function as a parameter, `(Double, Double) -> Double`. We pass it a closure that evaluates the parsed expression. Because `check` has already validated the expression, `eval` won't trap.
+Here `plot` is the main loop of the original `heatmap` program, refactored into a function that takes the function to plot as a parameter, of type `(Double, Double) -> Double`. We pass it a closure that evaluates the parsed expression. Because `check` has already validated the expression, `eval` won't trap.
 
 ```
-$ swift run -c release surface 'sin(-x) * pow(1.5, -r)' > ripple.svg
-$ swift run -c release surface 'pow(2, sin(y)) * pow(2, sin(x)) / 12' > eggbox.svg
-$ swift run -c release surface 'sin(x * y / 10) / 10' > saddle.svg
+$ swift run -c release heatmap 'sin(r) * pow(1.3, -r)' > ripple.svg
+$ swift run -c release heatmap 'sin(x) * sin(y)' > eggcrate.svg
+$ swift run -c release heatmap 'x * y / 36' > saddle.svg
 ```
 
 **Exercise 7.13:** Add a `description` property to `Expr` that pretty-prints the syntax tree. Check that the results, when parsed again, yield an equivalent tree.

@@ -1,31 +1,27 @@
 # 3. Basic Data Types
 
-It's all bits at the bottom, of course, but computers operate fundamentally on fixed-size numbers called *words*, which are interpreted as integers, floating-point numbers, bit sets, or memory addresses, then combined into larger aggregates that represent packets, pixels, portfolios, poetry, and everything else. Swift offers a variety of ways to organize data, with a spectrum of data types that at one end match the features of the hardware and at the other end provide what programmers need to conveniently represent complicated data structures.
+Underneath, a computer knows only bits: fixed-width groups of them, called words, that it can add, compare, shift, and move around. Everything else, from numbers and text to images and invoices, is an interpretation that programs place on those bits. A programming language's data types are its vocabulary of interpretations. At one end are types that map almost directly onto the hardware, such as 64-bit integers and IEEE floating-point numbers. At the other are types built for people, such as strings that understand the world's writing systems.
 
-Unlike C or Go, Swift has no "built-in" types in the usual sense. `Int`, `Double`, `Bool`, and `String` are ordinary structs defined in the standard library, written in Swift, with the same kinds of declarations you can write yourself. The compiler knows how to map their innards onto machine instructions, and the optimizer makes them exactly as efficient as true primitive types, but in every other respect they're just library code, and you can extend them with new methods and protocol conformances like any other type.
+Swift is unusual in one respect: it has no truly built-in types. `Int`, `Double`, `Bool`, and `String` are structs defined in the standard library, in Swift, using the same features available to your own code. The compiler gives them special treatment only where it matters for speed, mapping their operations onto single machine instructions, so they're as efficient as the primitive types of C. In every other way they're ordinary types, and you can extend them with methods and protocol conformances of your own, as we'll do in this chapter.
 
-Swift's types fall into a few broad families. This chapter covers the *basic* types, which include numbers, booleans, and strings. Chapter 4 covers *composite* types: arrays, dictionaries, sets, structs, and tuples. Classes and actors, the *reference* types, appear in Chapters 6 and 9, and *protocol types*, also called existentials, in Chapter 7.
+This chapter covers the *basic* types: numbers, Booleans, and strings, along with the literals that create them. Chapter 4 covers *composite* types such as arrays, dictionaries, structs, and tuples. Classes and actors, the reference types, come up in Chapters 6 and 9, and protocol types in Chapter 7.
 
 ## 3.1. Integers
 
-Swift's numeric types include several sizes of integers, floating-point numbers, and SIMD vectors. Each numeric type determines the size and signedness of its values. Let's begin with integers.
+Swift has signed and unsigned integers of four fixed sizes: `Int8`, `Int16`, `Int32`, and `Int64`, and their unsigned counterparts `UInt8` through `UInt64`. Swift 6 added `Int128` and `UInt128`. Two more types, `Int` and `UInt`, have the natural word size of the platform, which is 64 bits on every current desktop, server, and phone, and 32 bits on some embedded targets.
 
-Swift provides both signed and unsigned integer arithmetic. There are four distinct sizes of signed integers (8, 16, 32, and 64 bits), represented by the types `Int8`, `Int16`, `Int32`, and `Int64`, and corresponding unsigned versions `UInt8`, `UInt16`, `UInt32`, and `UInt64`. Swift 6 also added `Int128` and `UInt128`.
+`Int` is the type to use by default. It's the type of array indices and counts, of string lengths, and of integer literals when nothing else determines their type. Swift's guidelines recommend `Int` even for quantities that can't be negative, such as counts and sizes, because mixing signed and unsigned values requires conversions at every turn, and because unsigned subtraction is a trap waiting to happen (we'll see one shortly). The sized and unsigned types are for when the size matters: binary file formats, network protocols, hardware registers, bit manipulation, and C interoperability.
 
-There are also two types called just `Int` and `UInt` that are the natural or most efficient size for signed and unsigned integers on a particular platform: 64 bits on all current desktop, server, and phone platforms, and 32 bits on some embedded targets.
+`Int` and `Int64` are distinct types even where they have the same size, so moving a value from one to the other requires an explicit conversion.
 
-`Int` is by far the most widely used numeric type, and the API Design Guidelines recommend using it for all integer quantities unless you have a specific reason to choose otherwise. Array counts and indexes are `Int`, as are string lengths. Prefer `Int` even for values that can never be negative, such as counts, because mixing signed and unsigned values requires explicit conversions everywhere. The unsigned types are for bit patterns, for binary formats, and for interoperating with C.
-
-`Int` is *not* the same type as `Int64`, even on 64-bit platforms where they have the same representation. An explicit conversion is required to use a value of one where the other is needed.
-
-Signed numbers are represented in two's-complement form, in which the high-order bit is reserved for the sign of the number and the range of values of an *n*-bit number is from −2<sup>n−1</sup> to 2<sup>n−1</sup>−1. Unsigned integers use the full range of bits for non-negative values and thus have the range 0 to 2<sup>n</sup>−1. For instance, the range of `Int8` is −128 to 127, whereas the range of `UInt8` is 0 to 255. Every integer type has static properties `min` and `max` that give its range:
+Signed integers use two's-complement representation, so an *n*-bit signed integer holds values from −2<sup>n−1</sup> to 2<sup>n−1</sup>−1, and an unsigned one from 0 to 2<sup>n</sup>−1. Each type reports its range through `min` and `max`:
 
 ```swift
-print(Int8.min, Int8.max)  // "-128 127"
-print(UInt64.max)  // "18446744073709551615"
+print(Int16.min, Int16.max)  // "-32768 32767"
+print(UInt32.max)  // "4294967295"
 ```
 
-Swift's binary operators for arithmetic, logic, and comparison are listed here in order of decreasing precedence:
+Here are Swift's binary operators, in order of decreasing precedence:
 
 ```
 << >>                          bitwise shift
@@ -41,488 +37,429 @@ is as as? as!                  casting
 = += -= *= etc.                assignment
 ```
 
-These are fewer levels than C has, and they're slightly different: in particular, the shifts bind *more* tightly than multiplication, and the bitwise `&` binds as multiplication while `|` and `^` bind as addition. Parentheses may always be used to make the meaning clear or to override the precedence.
+The levels differ from C's in a few places worth remembering: shifts bind more tightly than multiplication, `&` groups with multiplication, and `|` and `^` group with addition. When in doubt, parenthesize.
 
-The arithmetic operators `+`, `-`, `*`, and `/` may be applied to integer and floating-point numbers. The remainder operator `%` applies only to integers. The sign of the remainder is always the same as the sign of the dividend, so `-5 % 3` and `-5 % -3` are both `-2`. The behavior of `/` depends on whether its operands are integers, so `5.0 / 4.0` is `1.25`, but `5 / 4` is `1`, since integer division truncates the result toward zero.
+The arithmetic operators work on integers and floating-point numbers alike, except the remainder operator `%`, which is for integers only. Integer division truncates toward zero, so `7 / 2` is `3` and `-7 / 2` is `-3`, and the remainder takes the sign of the dividend, so `-7 % 2` is `-1`. For a remainder that's always non-negative, as when wrapping an index around a circular buffer, you need a little extra arithmetic: `((i % n) + n) % n`.
 
 ### 3.1.1. Overflow
 
-Here Swift differs from both C and Go. If the result of an arithmetic operation has more bits than can be represented in the result type, it is said to *overflow*. In C, signed overflow is undefined behavior; in Go, high-order bits are silently discarded. In Swift, overflow is a *run-time error*: the program *traps*, stopping immediately with a message.
+When an arithmetic result doesn't fit in its type, the operation *overflows*. Languages disagree about what should happen then. In C, signed overflow is undefined behavior; in Java and Go, the result silently wraps around. Swift does neither. Overflow is treated as a bug, and the program *traps*, stopping with a diagnostic:
 
 ```swift
-var u: UInt8 = 255
-u += 1  // Fatal error: Arithmetic overflow
-
-var i: Int8 = 127
-i += 1  // Fatal error: Arithmetic overflow
+var brightness: UInt8 = 250
+brightness += 10  // Fatal error: Arithmetic overflow
 ```
 
-If the overflow is visible to the compiler, as in `let x: Int8 = 127 + 1`, it's a compile-time error instead.
+When the compiler can see the overflow, as in `let b: UInt8 = 250 + 10`, it reports an error at build time instead.
 
-Trapping is a deliberate safety choice. A silent overflow can turn a bounds check into a security hole, and it's almost never what the programmer intended. The checks cost very little, since processors set an overflow flag as a side effect of arithmetic, and the optimizer removes checks it can prove unnecessary.
+The reasoning is that an overflowed value is almost never what anyone intended, and silently producing one has caused real security holes: a length calculation wraps around to a small number, a buffer is allocated too small, and data is written past its end. Overflow checks are cheap, since the processor sets a flag on overflow anyway, and the optimizer removes the ones it can prove unnecessary.
 
-When you *do* want wraparound arithmetic, for hash functions, checksums, random number generators, and the like, use the *overflow operators* `&+`, `&-`, and `&*`, which discard the high-order bits:
-
-```swift
-var u: UInt8 = 255
-print(u &+ 1, u &* u)  // "0 1"
-
-var i: Int8 = 127
-print(i &+ 1)  // "-128"
-```
-
-The integer types also have methods that report overflow rather than trapping, for algorithms that need to detect it:
+Sometimes, though, there are other things you might want, and Swift makes each of them explicit. Hash functions, checksums, and pseudo-random generators want *wrapping* arithmetic, which the overflow operators `&+`, `&-`, and `&*` provide. Graphics code often wants *saturating* arithmetic, which clamps to the type's range. And some algorithms just need to *know* whether overflow happened:
 
 ```swift
-let (result, overflow) = Int.max.addingReportingOverflow(1)
-print(result, overflow)  // "-9223372036854775808 true"
+let level: UInt8 = 250
+print(level &+ 10)  // "4": wraps around, keeping the low 8 bits
+print(UInt8(clamping: Int(level) + 10))  // "255": saturates at the maximum
+
+let (sum, overflowed) = level.addingReportingOverflow(10)
+print(sum, overflowed)  // "4 true"
 ```
 
 ### 3.1.2. Comparison and Bitwise Operators
 
-Two integers of the same type may be compared using the binary comparison operators below; the type of a comparison expression is `Bool`.
+Integers of the same type are compared with `==`, `!=`, `<`, `<=`, `>`, and `>=`, which produce a `Bool`. These operators come from the `Equatable` and `Comparable` protocols, which the basic types all conform to, as do many other types; we'll meet the protocols properly in Chapter 7. There's also unary minus, for negation, and unary plus, which does nothing but is occasionally useful for symmetry.
 
-```
-==    equal to
-!=    not equal to
-<     less than
-<=    less than or equal to
->     greater than
->=    greater than or equal to
-```
-
-In fact, all values of basic type (booleans, numbers, and strings) are *comparable*, meaning that two values of the same type may be compared using the `==` and `!=` operators. Furthermore, integers, floating-point numbers, and strings are *ordered* by the comparison operators. These properties are captured by the protocols `Equatable` and `Comparable`, which many other types conform to as well.
-
-There are also unary addition and subtraction operators:
-
-```
-+    unary positive (no effect)
--    unary negation
-```
-
-Swift also provides the following bitwise binary operators, the first four of which treat their operands as bit patterns with no concept of arithmetic carry or sign:
+The bitwise operators treat an integer as a row of bits:
 
 ```
 &     bitwise AND
 |     bitwise OR
 ^     bitwise XOR
-~     bitwise NOT (unary prefix)
+~     bitwise NOT (prefix)
 <<    left shift
 >>    right shift
 ```
 
-Note that `~` is bitwise complement in Swift, as in C, while Go uses `^` for both XOR and complement. Swift has no AND NOT operator; write `x & ~y`.
-
-The code below shows how bitwise operations can be used to interpret a `UInt8` value as a compact and efficient set of 8 independent bits. It uses `String(_:radix:)` to print a number's binary digits, padding with zeros to 8 places:
+A classic use of bits is the Unix file mode, which packs nine permission flags (read, write, and execute, for the file's owner, its group, and everyone else) into the low nine bits of an integer, conventionally written in octal. The function below turns a mode into the familiar `rwxr-xr--` notation by testing each bit in turn:
 
 ```swift
-func binary(_ x: UInt8) -> String {
-    let digits = String(x, radix: 2)
-    return String(repeating: "0", count: 8 - digits.count) + digits
+// swiftpl/ch3/permissions
+/// Formats the low nine bits of a Unix file mode as in `ls -l`.
+func permissions(_ mode: UInt16) -> String {
+    let symbols: [Character] = ["r", "w", "x"]
+    var s = ""
+    for bit in stride(from: 8, through: 0, by: -1) {
+        let isSet = mode & (1 << bit) != 0
+        s.append(isSet ? symbols[(8 - bit) % 3] : "-")
+    }
+    return s
 }
 
-let x: UInt8 = 1 << 1 | 1 << 5
-let y: UInt8 = 1 << 1 | 1 << 2
-
-print(binary(x))  // "00100010", the set {1, 5}
-print(binary(y))  // "00000110", the set {1, 2}
-
-print(binary(x & y))  // "00000010", the intersection {1}
-print(binary(x | y))  // "00100110", the union {1, 2, 5}
-print(binary(x ^ y))  // "00100100", the symmetric difference {2, 5}
-print(binary(x & ~y))  // "00100000", the difference {5}
-
-for i in 0..<8 where x & (1 << i) != 0 {  // membership test
-    print(i)  // "1", "5"
-}
-
-print(binary(x << 1))  // "01000100", the set {2, 6}
-print(binary(x >> 1))  // "00010001", the set {0, 4}
+print(permissions(0o754))  // "rwxr-xr--"
 ```
 
-(Section 6.5 shows an implementation of integer sets that can be much bigger than a byte. For small sets with named members, the standard library's `OptionSet` protocol is the idiomatic tool; we'll see it in Section 3.6.)
+The expression `1 << bit` produces a number with only that bit set, and `mode & (1 << bit)` is nonzero exactly when `mode` has the bit set too. The other operators correspond to common operations on sets of permissions:
 
-In the shift operations `x << n` and `x >> n`, the `n` operand determines the number of bit positions to shift. Swift's shifts are *smart shifts*: shifting by a negative amount shifts the other way, and shifting by more than the width of the type produces 0 (or −1 for a right shift of a negative signed value), rather than being undefined. The shift amount may be any integer type, regardless of the type of `x`. For speed, the *masking shifts* `&<<` and `&>>` instead use only the low-order bits of the shift amount, as the hardware does.
+```swift
+let mode: UInt16 = 0o754
+print(permissions(mode | 0o002))  // "rwxr-xrw-": grant others write (union)
+print(permissions(mode & ~0o444))  // "-wx--x---": remove all read bits (difference)
+print(permissions(mode ^ 0o111))  // "rw-r--r-x": toggle every execute bit
+print(permissions(0o777 & ~0o022))  // "rwxr-xr-x": apply the common umask 022
+```
 
-Left shifts fill the vacated bits with zeros, as do right shifts of unsigned numbers, but right shifts of signed numbers fill the vacated bits with copies of the sign bit. For this reason, it's important to use unsigned arithmetic when you're treating an integer as a bit pattern.
+`|` sets bits, `&` combined with `~` clears them, and `^` flips them. For sets of a few named flags, the `OptionSet` protocol of Section 3.6 wraps exactly these operations in a friendlier interface, and Section 6.5 builds a bit-vector set that can hold large numbers.
 
-Integer types also have useful bit-level properties: `nonzeroBitCount` (population count), `leadingZeroBitCount`, `trailingZeroBitCount`, `byteSwapped`, and `bitWidth`.
+In `x << n` and `x >> n`, `n` gives the number of positions to shift. Swift's shifts are *smart shifts*: a shift by more than the type's width yields 0 (or −1, for a right shift of a negative number), and a negative shift amount shifts the other way, instead of being undefined as in C. The shift amount may be any integer type. When the last bit of speed matters, the *masking shifts* `&<<` and `&>>` behave like the hardware, using only the low bits of the shift amount.
+
+Left shifts fill the vacated low bits with zeros. Right shifts of unsigned values fill the high bits with zeros, but right shifts of signed values copy the sign bit into them. That's the right behavior for arithmetic, but it's a surprise when you meant to treat the value as plain bits, which is one reason to use unsigned types for bit patterns.
+
+Every integer type also offers bit-level properties: `nonzeroBitCount` (the number of 1 bits), `leadingZeroBitCount`, `trailingZeroBitCount`, `byteSwapped`, and `bitWidth`. Each compiles to a single instruction on most processors.
 
 ### 3.1.3. Conversions
 
-Although Swift provides unsigned numbers and arithmetic, we tend to use the signed `Int` form even for quantities that can't be negative, such as the length of an array, though `UInt` might seem a more obvious choice. Consider this loop, which in a C-like language with unsigned lengths runs forever:
-
-```c
-for (unsigned i = len - 1; i >= 0; i--) { ... }  // C: i >= 0 is always true
-```
-
-With `Int` there's no such problem, and in Swift you would write `for i in (0..<len).reversed()` anyway, avoiding index arithmetic altogether.
-
-In general, an explicit conversion is required to convert a value from one numeric type to another, and binary operators for arithmetic and logic (except shifts) must have operands of the same type. Although this occasionally results in longer expressions, it also eliminates a whole class of problems and makes programs easier to understand.
-
-As an example familiar from other contexts, consider this sequence:
+Swift never converts between numeric types implicitly. Even a lossless conversion from `Int32` to `Int64` must be written out, and the operands of an arithmetic operator must have the same type:
 
 ```swift
-let apples: Int32 = 1
-let oranges: Int16 = 2
-let compote = apples + oranges  // compile error
+let width: Int32 = 640
+let scale = 1.5
+let scaled = width * scale  // compile error
 ```
 
-Attempting to compile these three declarations produces an error message:
-
 ```
-error: binary operator '+' cannot be applied to operands of type 'Int32' and 'Int16'
+error: binary operator '*' cannot be applied to operands of type 'Int32' and 'Double'
 ```
 
-This type mismatch can be fixed in several ways, most directly by converting everything to a common type:
+You fix it by deciding which type the computation should use, and saying so:
 
 ```swift
-let compote = Int(apples) + Int(oranges)
+let scaled = Double(width) * scale  // 960.0
 ```
 
-Here Swift differs again from Go and C. Converting an integer to a narrower type with an initializer like `Int8(x)` doesn't silently truncate: if the value doesn't fit, the program traps. The integer types offer several initializers that let you say exactly what you want when the value might be out of range:
+The rule is strict on purpose. Implicit conversions are where silent truncations, sign mix-ups, and precision losses come from, and requiring them to be written makes each one visible.
+
+Converting to a narrower type deserves special care, because the value might not fit. A plain conversion like `Int16(x)` checks and traps if it doesn't. When out-of-range values are expected, the integer types offer initializers that say what to do instead:
 
 ```swift
-let big = 1000
-Int8(big)  // traps: "Not enough bits to represent the passed value"
-Int8(exactly: big)  // nil: returns an Optional
-Int8(clamping: big)  // 127: saturates to the nearest representable value
-Int8(truncatingIfNeeded: big)  // -24: keeps the low-order 8 bits, like C
+let reading = 70_000
+Int16(reading)  // traps: "Not enough bits to represent the passed value"
+Int16(exactly: reading)  // nil: returns an optional
+Int16(clamping: reading)  // 32767: saturates to the nearest representable value
+Int16(truncatingIfNeeded: reading)  // 4464: keeps the low 16 bits, as C would
 ```
 
-Converting from a floating-point number to an integer truncates toward zero, and also traps if the value is out of range, infinite, or NaN:
+Converting a floating-point value to an integer discards the fractional part, rounding toward zero, and traps if the value is out of range, infinite, or not a number. To round first, say so:
 
 ```swift
-let f = 3.141  // a Double
-let i = Int(f)
-print(f, i)  // "3.141 3"
-let g = 1.99
-print(Int(g))  // "1"
-print(Int(g.rounded()))  // "2"
-print(Int(exactly: g) as Any)  // "nil"
+let temperature = 98.6
+print(Int(temperature))  // "98"
+print(Int(temperature.rounded()))  // "99"
+print(Int(exactly: temperature) as Any)  // "nil": not a whole number
 ```
 
-Converting the other way, `Double(i)`, may lose precision for integers above 2<sup>53</sup>, which is the one numeric conversion that doesn't check.
+The conversion in the other direction, `Double(someInt)`, is the one numeric conversion that can lose information silently: integers above 2<sup>53</sup> can't all be represented exactly as a `Double`.
 
-Integer literals of any size and type can be written as ordinary decimal numbers, or as binary numbers if they begin with `0b`, octal numbers if they begin with `0o`, or hexadecimal if they begin with `0x`. Hexadecimal digits may be upper or lower case. Underscores may be used anywhere in a numeric literal to group digits, as in `1_000_000` or `0xFFFF_FFFF`. Unlike in C, a leading zero does *not* make a literal octal: `0755` is decimal 755.
-
-When printing numbers, `String(_:radix:uppercase:)` converts an integer to a string in any base from 2 to 36:
+Here's why `Int` is preferred even for values that can't be negative. Suppose a program tracks the sizes of two buffers as unsigned values and wants to know how much larger one is:
 
 ```swift
-let o = 0o666
-print(o, String(o, radix: 8))  // "438 666"
-let x = 0xdeadbeef
-print(x, String(x, radix: 16), String(x, radix: 16, uppercase: true))
-// "3735928559 deadbeef DEADBEEF"
+let used: UInt = 3
+let capacity: UInt = 5
+let spare = used - capacity  // traps: the true answer, -2, isn't a UInt
 ```
 
-For more control over formatting, Foundation's `String(format:)` accepts C's `printf` verbs, including widths, padding, and `%x` and `%o`:
+With `Int`, the subtraction produces −2, which is a perfectly good answer to check for. With `UInt`, the only possible outcomes are a trap (in Swift) or a huge wrapped-around number (in C), and both are bugs. Reserve unsigned types for bit patterns and external formats.
+
+Integer literals can be written in decimal, in binary with a `0b` prefix, in octal with `0o`, or in hexadecimal with `0x`; underscores may separate digits anywhere for readability, as in `1_000_000` or `0xFF_FF`. A leading zero alone means nothing special, so `0755` is the decimal number 755, not an octal one, which avoids a classic C mistake.
+
+To format an integer in another base, use `String(_:radix:uppercase:)`:
 
 ```swift
-print(String(format: "%d %08x %#o", 438, 438, 438))  // "438 000001b6 0666"
+print(String(255, radix: 2))  // "11111111"
+print(String(0o755, radix: 8))  // "755"
+print(String(48879, radix: 16), String(48879, radix: 16, uppercase: true))  // "beef BEEF"
 ```
 
-Characters are not integers in Swift, as we'll see in Section 3.5, but every Unicode scalar has a numeric code point, available from its `value` property:
+For column alignment, zero padding, and other control, Foundation's `String(format:)` accepts the formatting directives of C's `printf`:
 
 ```swift
-let ascii: Unicode.Scalar = "a"
-let unicode: Unicode.Scalar = "国"
-print(ascii, ascii.value)  // "a 97"
-print(unicode, unicode.value)  // "国 22269"
-print(String(unicode.value, radix: 16))  // "56fd"
+print(String(format: "[%5d] [%-5d] [%05d] [%x]", 42, 42, 42, 255))
+// "[   42] [42   ] [00042] [ff]"
+```
+
+Characters aren't integers in Swift, but every Unicode scalar, the unit Unicode assigns numbers to (Section 3.5), has a numeric code point, available through its `value` property:
+
+```swift
+let e: Unicode.Scalar = "é"
+let euro: Unicode.Scalar = "€"
+print(e.value, String(e.value, radix: 16))  // "233 e9"
+print(euro.value, String(euro.value, radix: 16))  // "8364 20ac"
 ```
 
 ## 3.2. Floating-Point Numbers
 
-Swift provides three main sizes of floating-point numbers, `Float16`, `Float`, and `Double`, which are 16, 32, and 64 bits wide. (On x86 platforms there's also `Float80`, the extended-precision type supported by that hardware.) Their arithmetic properties are governed by the IEEE 754 standard implemented by all modern CPUs.
+Swift's main floating-point types are `Float` (32 bits), `Double` (64 bits), and `Float16` (16 bits, mostly for graphics and machine learning); x86 platforms also have `Float80`. All follow the IEEE 754 standard that modern processors implement.
 
-Values of these numeric types range from tiny to huge. The static property `greatestFiniteMagnitude` gives the largest value: about 3.4e38 for `Float` and about 1.8e308 for `Double`. The smallest positive values are near 1.4e-45 and 4.9e-324, respectively, and available as `leastNonzeroMagnitude`.
-
-A `Float` provides approximately six decimal digits of precision, whereas a `Double` provides about 15 digits. `Double` should be preferred for most purposes, and it is the type that a floating-point literal gets when nothing else determines its type. `Float` computations accumulate error rapidly unless one is quite careful, and the smallest positive integer that cannot be exactly represented as a `Float` is not very large:
+`Double` is the one to use unless you have a reason not to, and it's the type a floating-point literal gets when nothing says otherwise. It carries about 15 to 17 significant decimal digits and ranges up to about 1.8 × 10<sup>308</sup>; `Float` carries only about 7 digits and ranges up to about 3.4 × 10<sup>38</sup>. Seven digits run out quickly. `Float` can't even represent every integer above 2<sup>24</sup>:
 
 ```swift
-var f: Float = 16_777_216  // 1 << 24
-print(f == f + 1)  // "true"!
+let big: Float = 16_777_217  // 2^24 + 1
+print(big)  // "1.6777216e+07": the nearest Float is 2^24
 ```
 
-Floating-point numbers can be written literally using decimals, like this:
+Use `Float` where memory or bandwidth dominates, such as large arrays of samples or GPU data, and `Double` everywhere else. The static properties `greatestFiniteMagnitude`, `leastNonzeroMagnitude`, `ulpOfOne`, and others describe each type's limits.
+
+Floating-point arithmetic is approximate, because most decimal fractions have no exact binary representation. A famous consequence:
 
 ```swift
-let e = 2.71828  // (approximately)
+var total = 0.0
+for _ in 0..<10 {
+    total += 0.1
+}
+print(total, total == 1.0)  // "0.9999999999999999 false"
 ```
 
-Digits may be omitted after the decimal point, but not before it: `.707` is not a valid literal, because a leading dot in Swift means an implicit member expression like `.pi`. Very small or very large numbers are better written in scientific notation, with the letter `e` or `E` preceding the decimal exponent:
+Each `0.1` is actually the nearest binary fraction to 0.1, slightly off, and the errors accumulate. Never test computed floating-point values for exact equality; check whether they're within some tolerance, or, for money and other quantities that must be exact, use integers (a count of cents) or Foundation's `Decimal`.
+
+Floating-point literals need digits before the decimal point (`.5` isn't a valid literal, since a leading dot means an implicit member like `.pi`), and may have an exponent, written with `e`:
 
 ```swift
-let avogadro = 6.02214129e23
-let planck = 6.62606957e-34
+let speedOfLight = 2.998e8  // meters per second
+let electronMass = 9.109e-31  // kilograms
 ```
 
-Floating-point values print using the shortest decimal representation that round-trips to the same value, so `print(0.1)` prints `0.1`, while `print(0.1 + 0.2)` prints `0.30000000000000004`. For tables and other output where precision should be controlled, use `String(format:)` with `%g` (the most compact representation that has adequate precision), `%e` (exponent), or `%f` (no exponent), all of which accept a field width and numeric precision. Foundation also offers a more flexible formatting API for locale-aware output, `x.formatted(.number.precision(.fractionLength(3)))`.
+`print` shows a `Double` with the fewest digits that convert back to exactly the same value, which is why `print(0.1)` shows `0.1` even though the stored value isn't exactly a tenth. For reports, format explicitly. `String(format:)` supports `%f` (fixed notation), `%e` (exponent notation), and `%g` (whichever is more compact), each with optional width and precision. Here's a table of the growth of $1,000 at 5% annual interest:
 
 ```swift
 import Foundation
 
-for x in 0..<8 {
-    print(String(format: "x = %d e^x = %8.3f", x, exp(Double(x))))
+print("year     balance")
+for year in stride(from: 0, through: 30, by: 5) {
+    let balance = 1000 * pow(1.05, Double(year))
+    print(String(format: "%4d  %10.2f", year, balance))
 }
 ```
 
-The code above prints the powers of *e* with three decimal digits of precision, aligned in an eight-character field:
-
 ```
-x = 0 e^x =    1.000
-x = 1 e^x =    2.718
-x = 2 e^x =    7.389
-x = 3 e^x =   20.086
-x = 4 e^x =   54.598
-x = 5 e^x =  148.413
-x = 6 e^x =  403.429
-x = 7 e^x = 1096.633
+year     balance
+   0     1000.00
+   5     1276.28
+  10     1628.89
+  15     2078.93
+  20     2653.30
+  25     3386.35
+  30     4321.94
 ```
 
-Elementary functions like `sin`, `exp`, and `sqrt` come from the platform's C math library, available through `Foundation` (or directly through `Darwin` on Apple platforms and `Glibc` or `Musl` on Linux). The standard library itself provides `squareRoot()`, `rounded(_:)`, `magnitude`, and the usual arithmetic, and the `swift-numerics` package's `RealModule` offers generic, cross-platform versions of all the elementary functions.
+The `%10.2f` directive right-aligns each number in a 10-character field with two digits after the decimal point. Foundation also has a richer, locale-aware formatting API, as in `balance.formatted(.currency(code: "USD"))`, which is what user-facing applications should use.
 
-The floating-point types have static properties for the special values defined by IEEE 754: the positive and negative infinities, which represent numbers of excessive magnitude and the result of division by zero; and NaN ("not a number"), the result of such mathematically dubious operations as `0.0 / 0.0` or `(-1.0).squareRoot()`.
+Mathematical functions such as `pow`, `sin`, `exp`, and `log` come from the platform's C library, which `Foundation` makes available (as do `Darwin`, `Glibc`, and `Musl` directly). The standard library itself provides `squareRoot()`, `rounded(_:)`, `magnitude`, `isFinite`, and the basic arithmetic, and the `swift-numerics` package's `RealModule` offers generic, portable versions of all the elementary functions.
+
+IEEE floating point has special values for results that ordinary numbers can't express. Dividing a nonzero number by zero gives positive or negative *infinity*, and operations with no meaningful answer, such as zero divided by zero or the square root of a negative number, give *NaN*, "not a number." Unlike integer division by zero, none of this traps:
 
 ```swift
-let z = 0.0
-print(z, -z, 1 / z, -1 / z, z / z)  // "0.0 -0.0 inf -inf nan"
+let zero = 0.0
+print(1 / zero, -1 / zero)  // "inf -inf"
+print((zero / zero).isNaN, (-1.0).squareRoot().isNaN)  // "true true"
 ```
 
-Floating-point division by zero does *not* trap, unlike integer division by zero. The property `isNaN` tests whether its argument is a not-a-number value, and `Double.nan` returns such a value. It's tempting to use NaN as a sentinel value in a numeric computation, but testing whether a specific computational result is equal to NaN is fraught with peril because any comparison with NaN *always* yields `false` (except `!=`, which is always the negation of `==`):
+NaN has a property that catches people out: it's not equal to anything, including itself. Every comparison involving NaN is `false`, except `!=`, which is `true`:
 
 ```swift
 let nan = Double.nan
-print(nan == nan, nan < nan, nan > nan)  // "false false false"
+print(nan == nan, nan < 1, nan > 1)  // "false false false"
 ```
 
-If a function that returns a floating-point result might fail, it's better to report the failure with an optional, like this:
+So never use NaN as a marker for "no value" and then test for it with `==`. Test with `isNaN`, or better, use an optional, which says "maybe no value" in the type:
 
 ```swift
-func compute() -> Double? {
-    // ...
-    if failed {
-        return nil
-    }
-    return result
+/// Returns the average of the values, or nil if there are none.
+func average(_ values: [Double]) -> Double? {
+    guard !values.isEmpty else { return nil }
+    return values.reduce(0, +) / Double(values.count)
 }
 ```
 
-The next program illustrates floating-point graphics computation. It plots a function of two variables `z = f(x, y)` as a wire mesh 3-D surface, using SVG, as we did in Section 1.4. It draws a three-dimensional surface by computing, for each cell of a 100 × 100 grid, the *z* value of the function at its four corners, projecting them isometrically onto the two-dimensional SVG canvas, and drawing the cell as a polygon.
+### 3.2.1. Example: A Heat Map
+
+Our next program puts floating-point arithmetic to work drawing a picture. It renders a function of two variables, *z* = *f*(*x*, *y*), as a *heat map*: a grid of squares, each colored according to the function's value at its center, from blue for the lowest values through white to red for the highest. The output is SVG, which any web browser can display.
 
 ```swift
-// swiftpl/ch3/surface
-// Surface computes an SVG rendering of a 3-D surface function.
+// swiftpl/ch3/heatmap
+// Heatmap renders a function of two variables as an SVG grid of colored cells.
 import Foundation
 
-let width = 600.0, height = 320.0  // canvas size in pixels
-let cells = 100  // number of grid cells
-let xyrange = 30.0  // axis ranges (-xyrange..+xyrange)
-let xyscale = width / 2 / xyrange  // pixels per x or y unit
-let zscale = height * 0.4  // pixels per z unit
-let angle = Double.pi / 6  // angle of x, y axes (=30°)
+let cells = 60  // number of cells along each axis
+let cellSize = 8.0  // size of each cell in pixels
+let range = 6.0  // x and y run from -range to +range
 
-let sin30 = sin(angle), cos30 = cos(angle)
-
-print(
-    """
-    <svg xmlns='http://www.w3.org/2000/svg' style='stroke: grey; fill: white; \
-    stroke-width: 0.7' width='\(Int(width))' height='\(Int(height))'>
-    """)
-for i in 0..<cells {
-    for j in 0..<cells {
-        let (ax, ay) = corner(i + 1, j)
-        let (bx, by) = corner(i, j)
-        let (cx, cy) = corner(i, j + 1)
-        let (dx, dy) = corner(i + 1, j + 1)
-        print(
-            String(
-                format: "<polygon points='%g,%g %g,%g %g,%g %g,%g'/>",
-                ax, ay, bx, by, cx, cy, dx, dy))
+let side = Int(Double(cells) * cellSize)
+print("<svg xmlns='http://www.w3.org/2000/svg' width='\(side)' height='\(side)'>")
+for row in 0..<cells {
+    for col in 0..<cells {
+        // Map the center of the cell to a point (x, y), with y increasing upward.
+        let x = range * (2 * (Double(col) + 0.5) / Double(cells) - 1)
+        let y = range * (1 - 2 * (Double(row) + 0.5) / Double(cells))
+        let z = f(x, y)
+        print("<rect x='\(Double(col) * cellSize)' y='\(Double(row) * cellSize)' "
+            + "width='\(cellSize)' height='\(cellSize)' fill='\(color(z))'/>")
     }
 }
 print("</svg>")
 
-func corner(_ i: Int, _ j: Int) -> (Double, Double) {
-    // Find point (x,y) at corner of cell (i,j).
-    let x = xyrange * (Double(i) / Double(cells) - 0.5)
-    let y = xyrange * (Double(j) / Double(cells) - 0.5)
-
-    // Compute surface height z.
-    let z = f(x, y)
-
-    // Project (x,y,z) isometrically onto 2-D SVG canvas (sx,sy).
-    let sx = width / 2 + (x - y) * cos30 * xyscale
-    let sy = height / 2 + (x + y) * sin30 * xyscale - z * zscale
-    return (sx, sy)
+/// The function to plot. Its values should lie roughly in -1...1.
+func f(_ x: Double, _ y: Double) -> Double {
+    sin(x) * cos(y)
 }
 
-func f(_ x: Double, _ y: Double) -> Double {
-    let r = hypot(x, y)  // distance from (0,0)
-    return sin(r) / r
+/// Maps v in -1...1 to a color: blue for -1, white for 0, red for +1.
+func color(_ v: Double) -> String {
+    let t = max(-1, min(1, v))  // clamp to the expected range
+    let r, g, b: Int
+    if t < 0 {
+        r = Int(255 * (1 + t))
+        g = r
+        b = 255
+    } else {
+        r = 255
+        g = Int(255 * (1 - t))
+        b = g
+    }
+    return String(format: "#%02x%02x%02x", r, g, b)
 }
 ```
 
-Notice that the function `corner` returns two values, the coordinates of the corner of the cell, as a tuple.
+```
+$ swift run heatmap > waves.svg
+```
 
-Explaining how the program works requires only basic geometry, but it's fine to skip over it, since the point is to illustrate floating-point computation. The essence of the program is mapping between three different coordinate systems. The first is a 2-D grid of 100 × 100 cells identified by integer coordinates (*i*, *j*), starting at (0, 0) in the far back corner. We plot from the back to the front so that background polygons may be obscured by foreground ones.
+The program juggles two coordinate systems. The grid has integer *rows* and *columns*, counted from the top left as SVG expects. The function, though, is defined on a continuous plane of `Double` coordinates centered on the origin, with *y* increasing upward. The two lines that compute `x` and `y` convert from one to the other: `(Double(col) + 0.5) / Double(cells)` is the cell's center as a fraction of the width, from 0 to 1; multiplying by 2 and subtracting 1 shifts it to the range −1 to 1; multiplying by `range` scales it to the plane. The *y* formula subtracts from 1 instead, flipping the vertical axis.
 
-The second coordinate system is a mesh of 3-D floating-point coordinates (*x*, *y*, *z*), where *x* and *y* are linear functions of *i* and *j*, translated so that the origin is in the center, and scaled by the constant `xyrange`. The height *z* is the value of the surface function *f*(*x*, *y*).
+`color` turns a value into a color in three steps. It clamps the value into −1...1 with `min` and `max`, so that a function that strays outside the expected range produces saturated colors rather than nonsense. It then fades from blue to white over the negative half and from white to red over the positive half. Finally it formats the three components as a CSS hex color like `#ff8080`. Note the declaration `let r, g, b: Int` without initial values: Swift's definite-initialization analysis (Section 2.3) confirms that both branches of the `if` assign all three before they're used.
 
-The third coordinate system is the 2-D image canvas, with (0, 0) in the top left corner. Points in this plane are denoted (*sx*, *sy*). We use an isometric projection to map each 3-D point (*x*, *y*, *z*) onto the 2-D canvas. A point appears farther to the right on the canvas the greater its *x* value or the *smaller* its *y* value. And a point appears farther down the canvas the greater its *x* value or *y* value, and the smaller its *z* value. The vertical and horizontal scale factors for *x* and *y* are derived from the sine and cosine of a 30° angle. The scale factor for *z*, 0.4, is an arbitrary parameter.
+With `sin(x) * cos(y)`, the picture is a checkerboard of soft red and blue blobs, a pattern often called an *egg crate*. Try other functions: `sin(hypot(x, y))` gives concentric ripples, and `(x * y) / (range * range)` a saddle.
 
-For each cell in the 2-D grid, the main program computes the coordinates on the image canvas of the four corners of the polygon ABCD, where B corresponds to (*i*, *j*) and A, C, and D are its neighbors, then prints an SVG instruction to draw it.
+**Exercise 3.1:** Some functions produce infinities or NaNs at some points (try `1 / (x * y)`). `color` clamps infinities, but `max` and `min` give unreliable results for NaN. Make the program paint any non-finite value gray, using `isFinite`.
 
-**Exercise 3.1:** If the function `f` returns a non-finite `Double` value, the SVG file will contain invalid `<polygon>` elements (although many SVG renderers handle this gracefully). Modify the program to skip invalid polygons. (Hint: `isFinite`.)
+**Exercise 3.2:** Instead of assuming the function's values lie in −1...1, compute all the values first, find the actual minimum and maximum, and scale the colors to fit.
 
-**Exercise 3.2:** Experiment with visualizations of other functions. Can you produce an egg box, moguls, or a saddle?
+**Exercise 3.3:** Replace the blue-white-red scale with a perceptually uniform one, such as *viridis*, by interpolating between a small table of reference colors.
 
-**Exercise 3.3:** Color each polygon based on its height, so that the peaks are colored red (`#ff0000`) and the valleys blue (`#0000ff`).
-
-**Exercise 3.4:** Following the approach of the Lissajous server in Section 1.7, construct a web server that computes surfaces and writes SVG data to the client. The server must set the `Content-Type` header to `image/svg+xml`.
+**Exercise 3.4:** Serve the heat map from a web server (Section 1.7), with query parameters for the grid size and the plotted range. Remember to set the `Content-Type` header to `image/svg+xml`.
 
 ## 3.3. Complex Numbers
 
-Swift's standard library doesn't include complex numbers, but the Swift project maintains a package that does: `swift-numerics`, whose `ComplexModule` provides a generic `Complex<RealType>` struct, usually used as `Complex<Double>`. Add the package to your manifest as a dependency on `https://github.com/apple/swift-numerics` from version `1.0.0`, and the product `ComplexModule` (or `Numerics`, which includes everything) to your target.
+The standard library has no complex number type, but the Swift project publishes one in the `swift-numerics` package: `Complex<RealType>`, from the `ComplexModule` product, almost always used as `Complex<Double>`. Add `https://github.com/apple/swift-numerics` from version `1.0.0` to your package's dependencies, and `ComplexModule` (or `Numerics`, which includes everything) to your target's.
 
-A complex number is created from its real and imaginary components, which are accessible as properties:
+A complex number has a real part and an imaginary part:
 
 ```swift
 import ComplexModule
 
-let x = Complex(1.0, 2.0)  // 1+2i
-let y = Complex(3.0, 4.0)  // 3+4i
-print(x * y)  // "(-5.0, 10.0)"
-print((x * y).real)  // "-5.0"
-print((x * y).imaginary)  // "10.0"
+let a = Complex(3.0, 4.0)  // 3 + 4i
+let b = Complex(1.0, -2.0)  // 1 - 2i
+print(a + b, a * b)  // "(4.0, 2.0) (11.0, -2.0)"
+print(a.real, a.imaginary)  // "3.0 4.0"
+print(a.length)  // "5.0", the magnitude |a|
 ```
 
-All the usual arithmetic operators work, and complex numbers may be compared for equality with `==` and `!=`. They are not ordered. `ComplexModule` provides the magnitude of a complex number as `length` and its square, which is cheaper to compute, as `lengthSquared`; the phase angle is `phase`. Elementary functions like `exp` and `sqrt` are available as static members, `Complex.exp(z)` and `Complex.sqrt(z)`:
+The usual arithmetic operators work, as do `==` and `!=`, though complex numbers have no ordering. Besides `length`, the magnitude, a complex number has `lengthSquared`, which avoids a square root, and `phase`, its angle from the positive real axis. A complex number can also be built from a magnitude and phase with `Complex(length:phase:)`, and elementary functions are available as static methods such as `Complex.exp(_:)` and `Complex.sqrt(_:)`:
 
 ```swift
-print(Complex.sqrt(Complex(-1.0, 0)))  // "(0.0, 1.0)", that is, i
+print(Complex.sqrt(Complex(-4.0, 0)))  // "(0.0, 2.0)": the square root of -4 is 2i
 ```
 
-The following program uses `Complex<Double>` arithmetic to generate a Mandelbrot set.
+### 3.3.1. Example: Finding Frequencies
+
+Complex numbers are at their most useful in signal processing, where they describe oscillations: a complex number of length 1 and phase θ is a point on the unit circle, and stepping θ forward traces a rotation. The *discrete Fourier transform* (DFT) uses such rotations to answer a question that's hard to answer by looking at a signal: what frequencies does it contain?
+
+The program below builds one second of a signal sampled 64 times, made of two sine waves, a strong one at 3 cycles per second and a weaker one, half as loud, at 10. It then computes the DFT and reports which frequencies are present:
 
 ```swift
-// swiftpl/ch3/mandelbrot
-// Mandelbrot emits a PGM image of the Mandelbrot fractal.
+// swiftpl/ch3/frequencies
+// Frequencies finds the component frequencies of a signal with a DFT.
 import ComplexModule
 import Foundation
 
-let xmin = -2.0, ymin = -2.0, xmax = 2.0, ymax = 2.0
-let width = 1024, height = 1024
-
-var pixels = [UInt8](repeating: 0, count: width * height)
-for py in 0..<height {
-    let y = Double(py) / Double(height) * (ymax - ymin) + ymin
-    for px in 0..<width {
-        let x = Double(px) / Double(width) * (xmax - xmin) + xmin
-        // Image point (px, py) represents complex value z.
-        pixels[py * width + px] = mandelbrot(Complex(x, y))
-    }
+let n = 64  // samples per second
+let samples = (0..<n).map { i in
+    let t = Double(i) / Double(n)  // time in seconds
+    return sin(2 * .pi * 3 * t) + 0.5 * sin(2 * .pi * 10 * t)
 }
-var image = Data("P5\n\(width) \(height)\n255\n".utf8)
-image.append(contentsOf: pixels)
-FileHandle.standardOutput.write(image)  // NOTE: ignoring errors
 
-func mandelbrot(_ z: Complex<Double>) -> UInt8 {
-    let iterations = 200
-    let contrast = 15
+let spectrum = dft(samples)
+for (k, x) in spectrum.prefix(n / 2).enumerated() where x.length > 1 {
+    print(String(format: "%2d Hz: magnitude %.1f", k, x.length))
+}
 
-    var v = Complex<Double>.zero
-    for n in 0..<iterations {
-        v = v * v + z
-        if v.lengthSquared > 4 {
-            return UInt8(truncatingIfNeeded: 255 - contrast * n)
+/// Returns the discrete Fourier transform of the samples.
+func dft(_ samples: [Double]) -> [Complex<Double>] {
+    let n = samples.count
+    return (0..<n).map { k in
+        var sum = Complex<Double>.zero
+        for (t, x) in samples.enumerated() {
+            let angle = -2 * Double.pi * Double(k * t) / Double(n)
+            sum += Complex(x) * Complex(length: 1, phase: angle)
         }
+        return sum
     }
-    return 0  // black
 }
 ```
 
-The two nested loops iterate over each point in a 1024 × 1024 grayscale raster image representing the −2 to +2 portion of the complex plane. The program tests whether repeatedly squaring and adding the number that point represents eventually "escapes" the circle of radius 2. If so, the point is shaded by the number of iterations it took to escape. If not, the value belongs to the Mandelbrot set, and the point remains black. Finally, the program writes to its standard output the image in the simple PGM format: a short text header followed by one byte per pixel. Most image viewers can display PGM files, and tools like ImageMagick can convert them to PNG.
-
 ```
-$ swift run -c release mandelbrot > mandelbrot.pgm
+$ swift run frequencies
+ 3 Hz: magnitude 32.0
+10 Hz: magnitude 16.0
 ```
 
-(The `-c release` flag builds with optimization. For numeric programs like this, an optimized build can be 10 or 50 times faster than a debug build, which keeps all the run-time checks and doesn't inline anything.)
+For each candidate frequency *k*, the transform multiplies every sample by a point rotating backward around the unit circle *k* times over the second, and adds up the results. If the signal contains a component at that frequency, the component and the rotation stay in step and their products accumulate; if not, they drift in and out of phase and largely cancel. The length of each sum measures how much of that frequency is present: here, 32 for the 3 Hz wave and 16 for the 10 Hz wave of half the amplitude, with every other bin essentially zero. (For a real-valued signal, the second half of the spectrum mirrors the first, so we look only at the first `n / 2` bins.) The phase of each sum, which we ignore here, would tell us where in its cycle each component starts.
 
-Notice the conversion `UInt8(truncatingIfNeeded:)`. The expression `255 - contrast * n` ranges from 255 down to −2730, and we want its low-order 8 bits, so that the shading cycles through the gray levels as the iteration count increases. A plain `UInt8(...)` would trap for any value outside 0...255. This is a typical example of how Swift makes you say what you mean when an integer conversion can lose information.
+`Complex(x)` turns a real sample into a complex number with zero imaginary part, and `Complex(length: 1, phase: angle)` is the point on the unit circle at that angle, which is *e*<sup>iθ</sup>, or cos θ + *i* sin θ. Without a complex type, we'd have to carry out the multiplication by hand, as separate real and imaginary sums of sines and cosines. The complex arithmetic expresses the idea directly.
 
-We compare `lengthSquared` against 4 rather than `length` against 2 to avoid computing a square root on every iteration.
+This direct transform takes time proportional to *n*², which is fine for 64 samples and hopeless for a million. The *fast Fourier transform* computes the same result in time proportional to *n* log *n* and is one of the most important algorithms in computing.
 
-**Exercise 3.5:** Implement a full-color Mandelbrot set using the PPM format (`P6`, three bytes per pixel) instead of PGM.
+**Exercise 3.5:** Implement the recursive radix-2 fast Fourier transform for inputs whose length is a power of two, and check that it agrees with `dft` to within a small tolerance.
 
-**Exercise 3.6:** Supersampling is a technique to reduce the effect of pixelation by computing the color value at several points within each pixel and taking the average. The simplest method is to divide each pixel into four "subpixels." Implement it.
+**Exercise 3.6:** Add random noise to the signal with `Double.random(in:)` and observe how the spectrum changes. How loud can the noise get before the 10 Hz component is hard to pick out?
 
-**Exercise 3.7:** Another simple fractal uses Newton's method to find complex solutions to a function such as *z*<sup>4</sup> − 1 = 0. Shade each starting point by the number of iterations required to get close to one of the four roots. Color each point by the root it approaches.
+**Exercise 3.7:** Write a function that returns both roots of a quadratic equation *ax*<sup>2</sup> + *bx* + *c* = 0 as `Complex<Double>` values, so that it works even when the discriminant is negative.
 
-**Exercise 3.8:** Rendering fractals at high zoom levels demands great arithmetic precision. Implement the same fractal using `Complex<Float>`, `Complex<Double>`, and (on x86) `Complex<Float80>`. How do they compare in performance and memory usage? At what zoom levels do rendering artifacts become visible?
-
-**Exercise 3.9:** Write a web server that renders fractals and writes the image data to the client. Allow the client to specify the *x*, *y*, and zoom values as parameters to the HTTP request.
+**Exercise 3.8:** Run `dft` with `Complex<Float>` instead of `Complex<Double>`, by making it generic over the real type. How large do the errors in the "empty" bins become as `n` grows?
 
 ## 3.4. Booleans
 
-A value of type `Bool`, or *boolean*, has only two possible values, `true` and `false`. The conditions in `if`, `while`, and `guard` statements are booleans, and comparison operators like `==` and `<` produce a boolean result. The unary operator `!` is logical negation, so `!true` is `false`, or, one might say, `(!true == false) == true`, although as a matter of style, we always simplify redundant boolean expressions like `x == true` to `x`. A `var` boolean can be negated in place with `x.toggle()`.
+A `Bool` is either `true` or `false`. Conditions in `if`, `while`, and `guard` must be `Bool`s, and comparisons produce them. The prefix operator `!` negates a Boolean, and a `var` Boolean can be flipped in place with `toggle()`. Style tip: compare Booleans to nothing. Write `if isEnabled`, not `if isEnabled == true`.
 
-Boolean values can be combined with the `&&` (AND) and `||` (OR) operators, which have *short-circuit* behavior: if the answer is already determined by the value of the left operand, the right operand is not evaluated, making it safe to write expressions like this:
-
-```swift
-s != "" && s.first == "x"  // fine even if s is empty
-```
-
-Since `&&` has higher precedence than `||` (mnemonic: `&&` is boolean multiplication, `||` is boolean addition), no parentheses are required for conditions of this form:
+The logical operators `&&` and `||` *short-circuit*: if the left operand decides the answer, the right operand isn't evaluated at all. That makes it safe to guard an operation with a test that must pass first:
 
 ```swift
-if "a" <= c && c <= "z" || "A" <= c && c <= "Z" || "0" <= c && c <= "9" {
-    // ...ASCII letter or digit...
+if index < items.count && items[index].isValid {
+    // items[index] is accessed only when index is in range
 }
 ```
 
-In a condition, a comma also means AND, and allows optional bindings to be mixed with boolean tests. Each clause can use the names bound by those before it:
+`&&` has higher precedence than `||`, just as multiplication has higher precedence than addition, so `a || b && c` means `a || (b && c)`. When the two are mixed, parentheses make the intent clearer.
+
+In an `if`, `while`, or `guard` condition, a comma also means "and," and lets Boolean tests be mixed with optional bindings, each clause able to use names bound before it:
 
 ```swift
-if let first = s.first, first.isLetter, s.count > 3 {
-    // ...
+if let user = currentUser, user.isAdmin, !user.isSuspended {
+    showAdminPanel(for: user)
 }
 ```
 
-There is no implicit conversion from a boolean value to a numeric value like 0 or 1, or vice versa. It's necessary to use an explicit conditional:
+There's no implicit conversion between `Bool` and numbers. If you need a 0 or 1, ask for it with `b ? 1 : 0`. In practice the need rarely arises, because what you usually want is a count of how many things are true, and collections can answer that directly:
 
 ```swift
-let i = b ? 1 : 0
+let checks = [true, false, true, true]
+print(checks.filter { $0 }.count)  // "3"
+print(checks.allSatisfy { $0 }, checks.contains(false))  // "false true"
 ```
-
-It might be worth writing a conversion function if this operation were needed often:
-
-```swift
-extension Int {
-    /// Creates 1 from true and 0 from false.
-    init(_ b: Bool) {
-        self = b ? 1 : 0
-    }
-}
-
-let n = Int(true)  // 1
-```
-
-The inverse operation is so simple that it doesn't warrant a function, but for symmetry here it is:
-
-```swift
-func itob(_ i: Int) -> Bool { i != 0 }
-```
-
-Notice that our `Int(_:)` initializer is added to the standard library's `Int` type with an *extension*. Extensions are covered in Chapter 6.
 
 ## 3.5. Strings
 
-A Swift string is an immutable-by-default, mutable-if-`var` sequence of *characters*, where a character is what a human reader would consider a single symbol of text. This sounds obvious, but it's unusual. In C a string is a sequence of bytes, in Java and JavaScript it's a sequence of UTF-16 code units, and in Go it's a sequence of bytes that conventionally holds UTF-8. Swift is one of very few languages whose basic string abstraction is the *extended grapheme cluster* defined by the Unicode standard.
+Swift's `String` type represents text as a sequence of *characters*, where a character means what a reader would call a character. That sounds like a definition no one could disagree with, but most languages don't actually follow it. In C, a string is an array of bytes. In Java and JavaScript, it's an array of 16-bit UTF-16 code units. In Go, it's a sequence of bytes that's usually UTF-8. In all of them, a single visible character may occupy several elements, and naïve indexing can cut one in half. Swift's `Character` type represents a whole *extended grapheme cluster*, the Unicode standard's definition of a user-perceived character, however many code points that takes.
 
-To see the difference, consider a string containing a flag emoji, which Unicode represents as two "regional indicator" code points, and an accented letter written as a base letter followed by a combining accent:
+Consider a string with a flag emoji, which Unicode encodes as two code points, and an "é" written as a plain "e" followed by a combining accent:
 
 ```swift
 let s = "🇨🇦 cafe\u{301}"
@@ -533,61 +470,44 @@ print(s.utf16.count)  // "10"
 print(s.utf8.count)  // "15"
 ```
 
-The `count` property gives the number of characters; the string's *views*, `unicodeScalars`, `utf16`, and `utf8`, give access to its contents at the level of Unicode code points and of the two common encodings. All four are collections, so you can iterate over any of them:
+`count` counts characters. The string's *views*, `unicodeScalars`, `utf16`, and `utf8`, present the same text as code points, as UTF-16 code units, and as UTF-8 bytes, and their counts differ accordingly. Each view is a collection that can be iterated and searched, and so is the string itself, element by element:
 
 ```swift
-for c in "héllo" {  // c is a Character
+for c in "naïve" {  // c is a Character
     print(c, terminator: " ")
 }
-// "h é l l o "
+// "n a ï v e "
 ```
 
-The price of character-level semantics is that strings can't be indexed by integer. Finding the *n*th character requires walking from the start of the string, because characters have variable width, and Swift refuses to make an O(*n*) operation look like an O(1) one. Instead, positions within a string are values of type `String.Index`, obtained from the string itself:
+### 3.5.1. Indices and Substrings
+
+Since characters vary in size, finding the *n*th one means scanning from the start. Swift won't disguise that cost as a cheap-looking `s[n]`, so strings can't be subscripted with integers. Positions are instead values of type `String.Index`, obtained from the string:
 
 ```swift
-let hello = "hello, world"
-print(hello[hello.startIndex])  // "h"
-let i = hello.index(hello.startIndex, offsetBy: 7)
-print(hello[i])  // "w"
-print(hello[..<i])  // "hello, "
+let phrase = "Swift on Linux"
+print(phrase[phrase.startIndex])  // "S"
+let i = phrase.index(phrase.startIndex, offsetBy: 6)
+print(phrase[i])  // "o"
+print(phrase[i...])  // "on Linux"
 ```
 
-This takes some getting used to. In practice, you rarely need integer offsets, because the standard library provides higher-level operations like `prefix(_:)`, `dropFirst(_:)`, `firstIndex(of:)`, `split(separator:)`, `hasPrefix(_:)`, and `contains(_:)`:
+This is clumsy at first, but most string code doesn't need positions at all, because higher-level operations cover the common needs: `prefix(_:)`, `suffix(_:)`, `dropFirst(_:)`, `hasPrefix(_:)`, `contains(_:)`, `firstIndex(of:)`, `split(separator:)`, `replacing(_:with:)`, and so on:
 
 ```swift
-print(hello.prefix(5))  // "hello"
-print(hello.dropFirst(7))  // "world"
-print(hello.hasPrefix("hell"))  // "true"
-print(hello.contains("lo, w"))  // "true"
+print(phrase.prefix(5))  // "Swift"
+print(phrase.hasSuffix("Linux"))  // "true"
+print(phrase.split(separator: " "))  // "["Swift", "on", "Linux"]"
 ```
 
-Subscripting a string with a range of indexes, or calling methods like `prefix` and `dropFirst`, produces a `Substring`. A substring shares storage with its base string, so making one is O(1), but it keeps the whole base string alive. Substrings are meant for temporary use, during parsing, for example. Convert one to a `String` before storing it for long:
+Slicing a string, whether with a range of indices or with methods like `prefix`, gives a `Substring`. A substring shares the original string's storage, so creating one is cheap, but it also keeps the whole original alive. Substrings are for short-lived use while processing text; convert to `String` before storing one: `let name = String(phrase.prefix(5))`.
 
-```swift
-let first = String(hello.prefix(5))
-```
+String comparison follows Unicode *canonical equivalence*: two strings are equal if they contain the same characters, however those characters are encoded, so the precomposed "é" (U+00E9) and "e" followed by U+0301 compare equal. The ordering used by `<` compares Unicode scalar values, which is consistent and fast, good for sorted keys and binary search, but it isn't the alphabetical order a person expects. For text shown to users, sort with Foundation's `localizedStandardCompare(_:)`.
 
-Strings may be compared with `==` and `<`. Comparison is by *canonical equivalence*: two strings are equal if they're made of the same characters, regardless of how those characters are encoded. So `"café"` written with a precomposed `é` (U+00E9) equals `"cafe\u{301}"`. Strings are ordered by comparing their Unicode scalar values, which is a stable order suitable for sorting keys but not the "dictionary" order that a human expects; for user-facing sorting, use Foundation's `localizedStandardCompare(_:)`.
+Strings are values. A `var` string can be changed in place with `append`, `+=`, `insert`, and `remove`, and changing one string never changes another, though, thanks to copy-on-write (Section 4.2), copies share storage until one of them is modified.
 
-Strings in Swift are values, like everything else. A `var` string can be modified in place with `append`, `+=`, `insert`, `remove`, and `replaceSubrange`, and modifying it never affects any other string, because copies share storage only until one of them is modified.
+### 3.5.2. String Literals
 
-```swift
-var s = "left foot"
-let t = s
-s += ", right foot"
-print(s)  // "left foot, right foot"
-print(t)  // "left foot"
-```
-
-### 3.5.1. String Literals
-
-A string value can be written as a *string literal*, a sequence of characters enclosed in double quotes:
-
-```swift
-"Hello, 世界"
-```
-
-Within a double-quoted string literal, *escape sequences* that begin with a backslash `\` can be used to insert special characters. The full list is short:
+A string literal is text in double quotes, with backslash escapes for special characters:
 
 ```
 \0      null character
@@ -601,334 +521,266 @@ Within a double-quoted string literal, *escape sequences* that begin with a back
 \(x)    interpolation of the expression x
 ```
 
-So `"\u{4E16}\u{754C}"` is the same as `"世界"`.
+So `"\u{1F600}"` is a grinning face, and `"caf\u{E9}"` is "café."
 
-A *raw string literal* is surrounded by one or more `#` characters: `#"..."#`. Within it, backslashes are ordinary characters, and escapes and interpolations must be written with the same number of `#` signs, as `\#n` or `\#(x)`. Raw strings are convenient for regular expressions and Windows paths:
-
-```swift
-let pattern = #"\d+\.\d+"#  // the regex \d+\.\d+
-let path = #"C:\Users\ken"#
-```
-
-A *multiline string literal* begins and ends with `"""` on lines of their own, as we saw in Section 1.4. Line breaks within it are part of the string, and the indentation of the closing delimiter is stripped from every line, so it can be indented to fit the code around it. Multiline literals are convenient for HTML templates, JSON, help messages, and the like:
+A *raw string*, delimited by `#"` and `"#`, treats backslashes literally; escapes and interpolations in it must include the same number of `#` signs (`\#n`, `\#(x)`). Raw strings are handy for regular expressions and Windows paths:
 
 ```swift
-let usage = """
-    swift run fetch url...
-      -s    print status code
-      -h    print headers
-    """
+let version = #"\d+\.\d+\.\d+"#  // the regex \d+\.\d+\.\d+
+let path = #"C:\Program Files\Swift"#
 ```
 
-### 3.5.2. Unicode
+A *multiline* literal is delimited by `"""` on lines of its own. Its line breaks are part of the string, and the closing delimiter's indentation is stripped from each line, so the literal can be indented along with the surrounding code (Section 1.4).
 
-Long ago, life was simple and there was, at least in a parochial view, only one character set to deal with: ASCII, the American Standard Code for Information Interchange. ASCII, or more precisely US-ASCII, uses 7 bits to represent 128 "characters": the upper- and lower-case letters of English, digits, and a variety of punctuation and device-control characters. For much of the early days of computing, this was adequate, but it left a very large fraction of the world's population unable to use their own writing systems in computers. With the growth of the Internet, data in myriad languages has become much more common. How can this rich variety be dealt with at all and, if possible, efficiently?
+### 3.5.3. Unicode
 
-The answer is *Unicode* (`unicode.org`), which collects all of the characters in all of the world's writing systems, plus accents and other diacritical marks, control codes like tab and carriage return, and plenty of esoterica, and assigns each one a standard number called a *Unicode code point*, or, in Swift terminology, a *Unicode scalar*. Swift represents one as a `Unicode.Scalar`, a 21-bit value.
+Text in computers began with ASCII, which encodes 128 characters (English letters, digits, punctuation, and control codes) in seven bits. It was enough for the American engineers who designed it and inadequate for everyone else. For decades, each language community devised its own incompatible encodings, and text frequently arrived as gibberish when it crossed a border.
 
-That isn't the whole story, though. What a reader sees as one character may be made up of several code points: a letter followed by one or more combining accents, a flag made of two regional indicators, a family emoji made of several person emoji joined by zero-width joiners, a Hangul syllable built from its jamo, or a Devanagari letter with a vowel sign. Unicode defines rules for grouping code points into *extended grapheme clusters*, and Swift's `Character` type represents one such cluster. That's why `"🇨🇦".count` is 1 even though it is two scalars, and why `"e\u{301}" == "é"`.
+*Unicode* (`unicode.org`) replaced that chaos with a single numbering of every character in every writing system: letters and ideographs, accents, symbols, emoji, and much else, well over a hundred thousand in all. Each is assigned a number called a *code point*, or in Swift, a *Unicode scalar*, represented by the type `Unicode.Scalar`.
 
-`Character` has convenient properties based on the Unicode database, like `isLetter`, `isNumber`, `isWhitespace`, `isUppercase`, `isASCII`, and `asciiValue`, so you rarely need to look at scalars directly.
+Code points aren't the end of the story, because a single visible character can be built from several of them: a letter followed by combining accents, a pair of "regional indicator" scalars forming a national flag, a family emoji assembled from several person emoji joined by invisible joiners, or a Korean syllable composed from its letters. Unicode defines how code points group into user-perceived characters, called *extended grapheme clusters*, and a Swift `Character` is one such cluster. That's why `"🇨🇦".count` is 1 even though it contains two scalars.
 
-### 3.5.3. UTF-8
+`Character` offers properties drawn from the Unicode database, such as `isLetter`, `isNumber`, `isWhitespace`, `isUppercase`, `isASCII`, and `asciiValue`, so that code can classify text correctly in any script without consulting tables of code points.
 
-Swift strings are stored natively in UTF-8, a variable-length encoding of Unicode code points as bytes. UTF-8 was invented by Ken Thompson and Rob Pike, two of the creators of Go, and is now a Unicode standard. It uses between 1 and 4 bytes to represent each code point, but only 1 byte for ASCII characters, and only 2 or 3 bytes for most code points in common use. The high-order bits of the first byte of the encoding for a code point indicate how many bytes follow. A high-order 0 indicates 7-bit ASCII, where each code point takes only 1 byte, so it is identical to conventional ASCII. A high-order 110 indicates that the code point takes 2 bytes; the second byte begins with 10. Larger code points have analogous encodings.
+### 3.5.4. UTF-8
+
+A string has to be stored as bytes somehow, and Swift uses UTF-8. UTF-8 encodes each code point in one to four bytes; the high bits of the first byte say how many bytes the sequence uses, and each continuation byte begins with the bits `10`:
 
 ```
 0xxxxxxx                              code points 0–127          (ASCII)
-110xxxxx 10xxxxxx                     128–2047                   (values <128 unused)
-1110xxxx 10xxxxxx 10xxxxxx            2048–65535                 (values <2048 unused)
-11110xxx 10xxxxxx 10xxxxxx 10xxxxxx   65536–0x10ffff             (other values unused)
+110xxxxx 10xxxxxx                     128–2047
+1110xxxx 10xxxxxx 10xxxxxx            2048–65535
+11110xxx 10xxxxxx 10xxxxxx 10xxxxxx   65536–0x10ffff
 ```
 
-A variable-length encoding precludes direct indexing to access the *n*th character of a string, but UTF-8 has many desirable properties to compensate. The encoding is compact, compatible with ASCII, and self-synchronizing: it's possible to find the beginning of a character by backing up no more than three bytes. It's also a prefix code, so it can be decoded from left to right without any ambiguity or lookahead. No code point's encoding is a substring of any other, or even of a sequence of others, so you can search for a code point by just searching for its bytes. The lexicographic byte order equals the Unicode code point order, so sorting UTF-8 works naturally. There are no embedded NUL (zero) bytes, which is convenient for programming languages that use NUL to terminate strings.
+The design has many virtues. ASCII text is unchanged, byte for byte, so UTF-8 is compatible with decades of existing software. Common text is compact. A decoder can find where a character starts from any position by skipping continuation bytes, and no character's encoding appears inside another's, so byte-level searching works. Sorting by bytes sorts by code point. These properties have made UTF-8 the dominant encoding of the web and of files everywhere.
 
-Since Swift 5, the `utf8` view of a native string is a direct view of its storage, so iterating over it is as fast as iterating over a byte array. When performance matters and you're processing ASCII-oriented data like CSV, JSON, or HTTP headers, working with the `utf8` view (a collection of `UInt8`) can be several times faster than working with characters:
+A native Swift string stores its UTF-8 bytes directly, so the `utf8` view involves no conversion and iterating over it is as fast as iterating over an array of bytes. For data that's mostly ASCII, such as CSV files, log lines, protocol headers, and JSON, processing the `utf8` view instead of characters can be several times faster, since it skips grapheme-cluster analysis.
+
+A short program shows where the multi-byte characters in a string begin:
 
 ```swift
 let s = "Hello, 世界"
-print(s.utf8.count)  // "13"
-print(s.count)  // "9"
-
-for (i, b) in s.utf8.enumerated() where b >= 0x80 {
-    print(i, String(b, radix: 16))
+print(s.count, s.utf8.count)  // "9 13"
+for (offset, byte) in s.utf8.enumerated() where byte >= 0xC0 {
+    print("a multi-byte character starts at byte \(offset)")
 }
-// 7 e4
-// 8 b8
-// ...
+// a multi-byte character starts at byte 7
+// a multi-byte character starts at byte 10
 ```
 
-To decode bytes into a string, use `String(decoding:as:)`, which replaces any ill-formed sequence with the Unicode replacement character, `\u{FFFD}`, printed as a white question mark inside a black hexagonal or diamond-like shape. Or use `String(validating:as:)` (Swift 6), which returns `nil` if the bytes are not valid UTF-8:
+Bytes at or above `0xC0` begin a multi-byte sequence; continuation bytes lie between `0x80` and `0xBF`.
+
+To make a string from bytes, `String(decoding:as:)` decodes UTF-8 and replaces any malformed sequence with the replacement character U+FFFD (usually drawn as a question mark in a diamond), while `String(validating:as:)` returns `nil` on malformed input:
 
 ```swift
-let bytes: [UInt8] = [0x48, 0x69, 0xFF]
-print(String(decoding: bytes, as: UTF8.self))  // "Hi\u{FFFD}"
+let bytes: [UInt8] = [0x4F, 0x4B, 0xFF]
+print(String(decoding: bytes, as: UTF8.self))  // "OK\u{FFFD}"
 print(String(validating: bytes, as: UTF8.self) as Any)  // "nil"
 ```
 
-### 3.5.4. Strings, Bytes, and the Standard Library
-
-Most string processing in Swift uses the methods of `String` itself and of the protocols it conforms to, `Collection`, `BidirectionalCollection`, and `RangeReplaceableCollection`. These give strings the same algorithms as arrays: `map`, `filter`, `reversed`, `contains`, `first(where:)`, `split`, `joined`, `firstRange(of:)`, `replacing(_:with:)`, and many more. Foundation adds Unicode-aware case-insensitive comparison, trimming of whitespace, and locale-aware operations, and the standard library's `Regex` type (Swift 5.7) and its literal syntax `/.../` provide regular expressions.
-
-The `basename` function below was inspired by the Unix shell utility of the same name. In our version, `basename(s)` removes any prefix of `s` that looks like a file system path with components separated by slashes, and it removes any suffix that looks like a file type:
+Working at the wrong level of the string corrupts text. Truncating a string to fit a display, for instance, must count characters, not bytes; cutting the UTF-8 bytes of "été" after four bytes splits the second "é" in half:
 
 ```swift
-print(basename("a/b/c.swift"))  // "c"
-print(basename("c.d.swift"))  // "c.d"
-print(basename("abc"))  // "abc"
+let word = "été"
+print(String(decoding: word.utf8.prefix(4), as: UTF8.self))  // "ét\u{FFFD}": broken
+print(word.prefix(2))  // "ét": correct
 ```
 
-The first version of `basename` does all the work without the help of libraries:
+### 3.5.5. Processing Text
+
+Most string processing uses methods that `String` gets from the collection protocols it conforms to, which give strings many of the same algorithms as arrays (`map`, `filter`, `reversed`, `contains`, `first(where:)`, `split`, `firstRange(of:)`, `replacing(_:with:)`), plus Foundation's case-insensitive and locale-aware operations and the standard library's `Regex` type, written `/.../` (Swift 5.7).
+
+Here's a small example of character-by-character processing: *run-length encoding*, which compresses runs of a repeated character into a count and the character, so that `"aaabccdddd"` becomes `"3a1b2c4d"`:
 
 ```swift
-// swiftpl/ch3/basename1
-// basename removes directory components and a .suffix.
-// e.g., a => a, a.swift => a, a/b/c.swift => c, a/b.c.swift => b.c
-func basename(_ path: String) -> String {
-    var s = Substring(path)
-    // Discard last "/" and everything before.
-    var i = s.endIndex
-    while i > s.startIndex {
-        let prev = s.index(before: i)
-        if s[prev] == "/" {
-            s = s[i...]
-            break
-        }
-        i = prev
+// swiftpl/ch3/rle
+/// Returns the run-length encoding of s: each run of a repeated
+/// character becomes its length followed by the character.
+func runLengthEncoded(_ s: String) -> String {
+    var out = ""
+    var rest = Substring(s)
+    while let c = rest.first {
+        let run = rest.prefix(while: { $0 == c })
+        out += "\(run.count)\(c)"
+        rest = rest.dropFirst(run.count)
     }
-    // Preserve everything before last ".".
-    i = s.endIndex
-    while i > s.startIndex {
-        let prev = s.index(before: i)
-        if s[prev] == "." {
-            s = s[..<prev]
-            break
-        }
-        i = prev
-    }
-    return String(s)
+    return out
 }
+
+print(runLengthEncoded("aaabccdddd"))  // "3a1b2c4d"
+print(runLengthEncoded("🇨🇦🇨🇦🇨🇦"))  // "3🇨🇦"
 ```
 
-A simpler version uses the collection method `lastIndex(of:)`:
+The loop consumes the input from the front. `rest.first` is the character beginning the current run; `prefix(while:)` measures how far the run extends; and `dropFirst` advances past it. Because `rest` is a `Substring`, each step creates only a view, not a copy. Because all the operations work in `Character`s, a run of flags is counted as a run of flags, three of them, rather than as six unrelated code points.
+
+When building a string piece by piece, append to a `var` string. Appending is amortized constant time, because strings grow their storage geometrically, as arrays do. As an example, here's a function that writes bytes in hexadecimal, eight to a line, in the style of a hex dump:
 
 ```swift
-// swiftpl/ch3/basename2
-func basename(_ path: String) -> String {
-    var s = Substring(path)
-    if let slash = s.lastIndex(of: "/") {
-        s = s[s.index(after: slash)...]
-    }
-    if let dot = s.lastIndex(of: ".") {
-        s = s[..<dot]
-    }
-    return String(s)
-}
-```
-
-Both versions slice a `Substring` rather than building new strings at each step, so they allocate memory only once, at the end. An index from a substring is valid in its base string and vice versa, which makes this kind of incremental slicing easy.
-
-Foundation's `URL` and the `swift-system` package's `FilePath` have functions for manipulating hierarchical names like file paths and URLs, and should be used in real programs, where they correctly handle the many edge cases.
-
-Let's look at another substring example. The task is to take a string representation of an integer, such as `"12345"`, and insert commas every three places, as in `"12,345"`. This version only works for integers; handling floating-point numbers is left as an exercise.
-
-```swift
-// swiftpl/ch3/comma
-// comma inserts commas in a non-negative decimal integer string.
-func comma(_ s: String) -> String {
-    if s.count <= 3 {
-        return s
-    }
-    let i = s.index(s.endIndex, offsetBy: -3)
-    return comma(String(s[..<i])) + "," + s[i...]
-}
-```
-
-The argument to `comma` is a string. If its length is less than or equal to 3, no comma is necessary. Otherwise, `comma` calls itself recursively with a substring consisting of all but the last three characters, and appends a comma and the last three characters to the result of the recursive call. The `+` operator can concatenate a `String` with a `Substring`, producing a `String`.
-
-(Of course, for real output you'd use Foundation's number formatting, `12345.formatted()`, which inserts the separators appropriate for the user's locale.)
-
-A `String` can be built up efficiently by appending to a `var`. If you're constructing it from bytes, accumulate them in a `[UInt8]` and decode once at the end. The `intsToString` function below converts an array of integers into a string representation that looks like an array literal, with the elements separated by commas and enclosed in square brackets:
-
-```swift
-// swiftpl/ch3/printints
-// intsToString is like String(describing:) but adds spaces after the commas.
-func intsToString(_ values: [Int]) -> String {
-    var buf = "["
-    for (i, v) in values.enumerated() {
+/// Formats bytes as two-digit hexadecimal numbers, eight per line.
+func hexDump(_ bytes: some Sequence<UInt8>) -> String {
+    var out = ""
+    for (i, b) in bytes.enumerated() {
         if i > 0 {
-            buf += ", "
+            out += i % 8 == 0 ? "\n" : " "
         }
-        buf += String(v)
+        if b < 0x10 {
+            out += "0"
+        }
+        out += String(b, radix: 16)
     }
-    buf += "]"
-    return buf
+    return out
 }
 
-print(intsToString([1, 2, 3]))  // "[1, 2, 3]"
+print(hexDump("Hello, 世界".utf8))
+// 48 65 6c 6c 6f 2c 20 e4
+// b8 96 e7 95 8c
 ```
 
-That's one of those cases where the library already has a better answer: `"[" + values.map(String.init).joined(separator: ", ") + "]"`. We'll explain `map` in Section 5.5.
+The output makes the encoding visible: seven ASCII bytes, then three bytes each for 世 (`e4 b8 96`) and 界 (`e7 95 8c`).
 
-**Exercise 3.10:** Write a non-recursive version of `comma`, building the result in a `var` string.
+**Exercise 3.9:** Write `runLengthDecoded(_:)`, the inverse of `runLengthEncoded`, and check that decoding an encoding gives back the original. What should the decoder do with malformed input such as `"3"` or `"a"`? What about input whose characters are themselves digits?
 
-**Exercise 3.11:** Enhance `comma` so that it deals correctly with floating-point numbers and an optional sign.
+**Exercise 3.10:** Write a function `truncated(_ s: String, to n: Int) -> String` that shortens a string to at most `n` characters, ending with "…" when anything was cut, and preferring to cut at a space if there's one in the last few characters.
 
-**Exercise 3.12:** Write a function that reports whether two strings are anagrams of each other, that is, they contain the same letters in a different order. Should "listen" and "Silent" be anagrams? Should strings that differ only in Unicode normalization be considered anagrams?
+**Exercise 3.11:** Extend `hexDump` to print an offset at the start of each line and, at the end, the printable ASCII characters of the line's bytes, in the style of the `xxd` tool.
 
-### 3.5.5. Conversions between Strings and Numbers
+### 3.5.6. Conversions between Strings and Numbers
 
-In addition to conversions between strings, characters, and bytes, it's often necessary to convert between numeric values and their string representations. This is done with initializers on the destination type.
-
-To convert an integer to a string, one option is string interpolation; another is `String(_:)`:
+To convert a number to its decimal text, use string interpolation or `String(_:)`; to choose a base, use `String(_:radix:)`:
 
 ```swift
-let x = 123
-let y = "\(x)"
-print(y, String(x))  // "123 123"
+let n = 2025
+print("\(n)", String(n), String(n, radix: 16))  // "2025 2025 7e9"
 ```
 
-`String(_:radix:)` formats numbers in a different base, as we've seen.
-
-To parse a string representing an integer, use the integer type's failable initializer, `Int(_:)`, `UInt8(_:)`, and so on, which returns `nil` if the string isn't a valid number or is out of range for the type. An optional `radix:` argument specifies the base:
+Parsing goes the other way. Every numeric type has an initializer that takes a string and returns an optional, `nil` if the text isn't a valid number or is out of range for the type. Integer types also accept a `radix:`:
 
 ```swift
-let a = Int("123")  // Optional(123)
-let b = Int("12a")  // nil
-let c = Int("ff", radix: 16)  // Optional(255)
-let d = Int8("300")  // nil: out of range
+Int("42")  // Optional(42)
+Int(" 42")  // nil: no surrounding whitespace allowed
+Int("ff", radix: 16)  // Optional(255)
+UInt8("300")  // nil: too big for a UInt8
+Double("2.5e3")  // Optional(2500.0)
 ```
 
-Parsing is strict: leading and trailing whitespace are not allowed, though a leading `+` or `-` is. Floating-point types have the same kind of initializer, `Double("3.14")`, which accepts decimal and hexadecimal notation, `"inf"`, and `"nan"`.
-
-Because these initializers return optionals, the usual way to use them is with `if let`, `guard let`, or `??`:
+The parsers are strict: a leading sign is allowed, but nothing else besides digits, so text from users or files usually needs trimming first. Because the results are optional, parsing goes naturally with `guard let`, `if let`, and `??`:
 
 ```swift
-guard let port = Int(portArgument), (1...65535).contains(port) else {
-    fatalError("invalid port: \(portArgument)")
+guard let port = Int(portText), (1...65535).contains(port) else {
+    fatalError("invalid port: \(portText)")
 }
-let retries = Int(retriesArgument) ?? 3
+let retries = Int(retriesText) ?? 3
 ```
 
 ## 3.6. Literals and Constants
 
-In Go, constants are expressions whose value is known to the compiler and whose evaluation is guaranteed to occur at compile time. Swift takes a different approach. It has no separate category of constant expressions; a `let` holds any value, computed whenever it's initialized. Instead, Swift makes *literals* flexible.
+A *literal* is a value written directly in source code: `42`, `3.14`, `"hello"`, `true`, `[1, 2, 3]`, `nil`. Swift's literals are more flexible than they first appear, because a literal has no fixed type of its own.
 
 ### 3.6.1. Literal Types
 
-A numeric literal like `42` or `3.5` has no type of its own. Its type is inferred from context:
+The type of a literal comes from its context:
 
 ```swift
 let a = 42  // Int, the default for integer literals
-let b: Double = 42  // the literal 42 becomes a Double
-let c: UInt8 = 42  // the literal 42 becomes a UInt8
-let d = 42 + 3.5  // Double: 42 can be a Double, so it is
-let e: Float = 1 / 3  // Float 0.33333334, not integer division
+let b: Double = 42  // the literal becomes a Double
+let c: UInt8 = 42  // the literal becomes a UInt8
+let d = 42 + 0.5  // Double: the context requires it
+let e: Float = 1 / 3  // Float division, 0.33333334, not integer division
 ```
 
-Each literal kind corresponds to a protocol. Any type that conforms to `ExpressibleByIntegerLiteral` can be initialized from an integer literal, and likewise for floating-point, string, boolean, array, dictionary, and `nil` literals. When a literal appears in an expression, the compiler picks the type from context, falling back on a default (`Int`, `Double`, `String`, `Bool`, `Array`, `Dictionary`) only when the context doesn't determine one. This gives many of the benefits of Go's untyped constants: a literal can be used wherever any numeric type is expected, without conversion, and a literal that doesn't fit is a compile-time error:
+Each kind of literal corresponds to a protocol. A type conforming to `ExpressibleByIntegerLiteral` can be created from an integer literal, and similarly for floating-point, string, Boolean, array, dictionary, and `nil` literals. When the compiler meets a literal, it picks a type from the surrounding expression, falling back on a default (`Int`, `Double`, `String`, `Bool`, `Array`, or `Dictionary`) only when nothing else decides it. So a literal fits wherever any suitable type is expected, without conversions, and a literal that can't fit is caught at compile time:
 
 ```swift
-let big: UInt8 = 256  // compile error: integer literal '256' overflows when stored into 'UInt8'
+let small: Int8 = 200  // compile error: integer literal '200' overflows when stored into 'Int8'
 ```
 
-But literals are not constants: once a literal becomes a value, it has an ordinary type and all the usual rules apply. Arithmetic on literals happens at the precision of the type the expression ends up with, not at some arbitrary precision as in Go. Thus:
+Once a literal has become a value, it's an ordinary value of its type, and ordinary rules apply. In particular, arithmetic on literals happens in the type of the result, not with some unlimited precision:
 
 ```swift
 let x = 1 << 70  // 0: an Int smart-shifted past its width
 let y = 9_223_372_036_854_775_807 + 1  // compile error: arithmetic operation overflows
 ```
 
-Because user-defined types can conform to the literal protocols, we saw in Section 2.5 how `Celsius` could be written as `let c: Celsius = 100`. Many standard library types do the same: a `Set<String>` can be written as an array literal, and an `Optional` can be written as `nil`.
+User-defined types can opt in to literal syntax. We gave `Celsius` integer and floating-point literals in Section 2.5, and many standard types use the protocols too: an array literal can create a `Set`, and a string literal can create a `Character` or a `Unicode.Scalar`, as we did in Section 3.1.
 
-Literals and simple constant expressions are folded at compile time by the optimizer. If you want to give a constant a name, a `let` at global or static scope is the idiom, and the compiler will usually turn it into an immediate value in the generated code:
+Named constants are simply `let` declarations. The optimizer folds simple constant expressions into the code that uses them, so naming a value costs nothing at run time:
 
 ```swift
-let maxConnections = 1024
-let timeout = 2.5  // seconds
+let maxConnections = 512
+let requestTimeout = 30.0  // seconds
 
 enum Physics {
     static let speedOfLight = 299_792_458.0  // meters per second
+    static let standardGravity = 9.806_65  // meters per second squared
 }
 ```
 
-The `enum Physics`, with no cases, is a common Swift idiom for a *namespace*: a type that can't be instantiated, used only to group related static members.
+An `enum` with no cases, like `Physics`, can't be instantiated, which makes it a convenient *namespace* for grouping related constants.
 
 ### 3.6.2. Enumerations
 
-Go uses its constant generator `iota` to create sequences of related constants. Swift uses enumerations, which are true types, not just integers with names:
+When a value can be one of a fixed set of alternatives, model it with an enumeration:
 
 ```swift
-enum Weekday {
-    case sunday, monday, tuesday, wednesday, thursday, friday, saturday
+enum Suit {
+    case clubs, diamonds, hearts, spades
 }
 
-var today = Weekday.wednesday
-today = .thursday  // type inferred from context
+var trump = Suit.hearts
+trump = .spades  // the type is known, so the leading dot is enough
 ```
 
-An enum may have a *raw value* type, in which case each case has a value of that type. For integer raw values, the compiler assigns 0, 1, 2, and so on, just as `iota` does, unless you specify otherwise. For string raw values, each case's raw value defaults to its name:
+An enum is a real type. A `Suit` can't be confused with an integer or a string, and a `switch` over one must handle every case (or provide a `default`), so adding a case later makes the compiler point out every switch that needs updating.
+
+An enum can have *raw values* of an integer, floating-point, or string type, so that each case corresponds to a fixed value, which is useful when cases must be stored in a file or sent over a network. Integer raw values count up automatically from the last one given, starting at 0; string raw values default to the case names:
 
 ```swift
-enum Weekday: Int, CaseIterable {
-    case sunday, monday, tuesday, wednesday, thursday, friday, saturday
+enum Priority: Int, CaseIterable {
+    case low = 1, normal, high, urgent
 }
 
-print(Weekday.tuesday.rawValue)  // "2"
-print(Weekday(rawValue: 5)!)  // "friday"
-print(Weekday.allCases.count)  // "7"
+print(Priority.urgent.rawValue)  // "4"
+print(Priority(rawValue: 2)!)  // "normal"
+print(Priority(rawValue: 9) as Any)  // "nil"
+print(Priority.allCases.map(\.rawValue))  // "[1, 2, 3, 4]"
 ```
 
-The initializer `Weekday(rawValue:)` is failable, since not every integer corresponds to a weekday. Conformance to `CaseIterable` makes the compiler generate an `allCases` collection containing every case in declaration order.
+Creating a case from a raw value can fail, since not every number is a priority, so `init(rawValue:)` returns an optional. Conforming to `CaseIterable` makes the compiler provide `allCases`, every case in declaration order.
 
-Unlike Go constants, enum values are type-safe: you can't pass an arbitrary integer where a `Weekday` is expected, and a `switch` over a `Weekday` must handle all seven cases.
+Enumerations can do much more: cases can carry associated values of their own (Section 1.8), and enums can have methods and conform to protocols. They'll appear throughout the rest of the book.
 
 ### 3.6.3. Option Sets
 
-As a more complex example of `iota`, Go's `net` package declares names for the bits of an unsigned integer that indicate the properties of a network interface. Swift's equivalent is a struct conforming to the `OptionSet` protocol:
+Sometimes the alternatives aren't exclusive: text can be bold *and* italic. Rather than a single case, such a value is a set of independent flags, traditionally packed into the bits of an integer, as with the file permissions of Section 3.1. Swift's `OptionSet` protocol packages that technique:
 
 ```swift
-struct NetFlags: OptionSet {
-    let rawValue: UInt
+struct TextStyle: OptionSet {
+    let rawValue: UInt8
 
-    static let up = NetFlags(rawValue: 1 << 0)  // interface is up
-    static let broadcast = NetFlags(rawValue: 1 << 1)  // interface supports broadcast access capability
-    static let loopback = NetFlags(rawValue: 1 << 2)  // interface is a loopback interface
-    static let pointToPoint = NetFlags(rawValue: 1 << 3)  // interface belongs to a point-to-point link
-    static let multicast = NetFlags(rawValue: 1 << 4)  // interface supports multicast access capability
+    static let bold = TextStyle(rawValue: 1 << 0)
+    static let italic = TextStyle(rawValue: 1 << 1)
+    static let underline = TextStyle(rawValue: 1 << 2)
+    static let strikethrough = TextStyle(rawValue: 1 << 3)
+
+    static let emphasis: TextStyle = [.bold, .italic]  // a combination
 }
 ```
 
-The struct wraps an integer (the `rawValue`) and declares each named flag as a static constant with one bit set. In exchange for those few lines, the `OptionSet` protocol supplies a full set of operations through its default implementations: `contains`, `insert`, `remove`, `union`, `intersection`, and more, plus array-literal syntax for creating a set:
+The struct stores the bits as its `rawValue` and names each flag as a static constant with one bit set. From that, `OptionSet` provides the operations of a set (`contains`, `insert`, `remove`, `union`, `intersection`, `symmetricDifference`, and the rest) and lets values be written as array literals:
 
 ```swift
-var v: NetFlags = [.multicast, .up]
-print(v.rawValue)  // "17"
-print(v.contains(.up))  // "true"
-v.remove(.up)
-print(v.contains(.up))  // "false"
-v.insert(.broadcast)
-v.formUnion(.up)
-print(v.contains([.broadcast, .up]))  // "true"
+var style: TextStyle = [.bold, .underline]
+print(style.rawValue)  // "5"
+print(style.contains(.bold))  // "true"
+style.remove(.bold)
+style.formUnion(.emphasis)
+print(style.contains([.italic, .underline]))  // "true"
+print(style.isSuperset(of: .emphasis))  // "true"
 ```
 
-There's no need to write `isUp`, `turnDown`, and `setBroadcast` functions, as one would in Go, because the generic set operations already express them clearly.
+There's no need to write `isBold` or `setItalic` helpers; the set operations already say everything, and they compile to the same bit manipulation you would write by hand.
 
-As a final example, here's a set of named byte sizes. Since there's no exponentiation operator, we use shifts:
+**Exercise 3.12:** Add raw values of type `String` to `Suit`, and use `CaseIterable` to print a deck of 52 cards, such as `"A♠"`.
 
-```swift
-enum ByteSize {
-    static let kiB = 1 << 10  // 1024
-    static let miB = 1 << 20  // 1048576
-    static let giB = 1 << 30  // 1073741824
-    static let tiB = 1 << 40  // 1099511627776
-    static let piB = 1 << 50  // 1125899906842624
-    static let eiB = 1 << 60  // 1152921504606846976
-}
-```
-
-Unlike in Go, the next step, `1 << 70`, can't be represented as an `Int`; as we saw above, the smart shift just produces 0. You'd need a larger type such as `UInt128`, because literal arithmetic is done in the type of the result.
-
-**Exercise 3.13:** Write `static let` declarations for KB, MB, up through YB (powers of 1000) as compactly as you can. Which of them overflow `Int`? Which type could represent them all?
-
-**Exercise 3.14:** Add a `description` to `NetFlags` that lists the names of the flags that are set, like `[up, multicast]`. Is there a way to avoid writing each name twice?
+**Exercise 3.13:** Give `TextStyle` a `description` that lists the names of the styles it contains, like `[bold, italic]`. Can you avoid writing each name twice? (Hint: consider a static array of `(TextStyle, String)` pairs.)

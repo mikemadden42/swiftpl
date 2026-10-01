@@ -519,9 +519,9 @@ And beware tests that can't fail: those that compare a function's output with it
 
 **Exercise 11.2:** Write a randomized test for the `IntSet` of Section 6.5 that applies a long random sequence of `insert`, `contains`, and `formUnion` operations to both an `IntSet` and a `Set<Int>` and checks that they always agree.
 
-**Exercise 11.3:** Write tests for the `comma` function of Section 3.5. Once you've done Exercise 3.11, extend them to cover signs and decimals.
+**Exercise 11.3:** Write tests for `runLengthEncoded` from Section 3.5, including empty strings, single characters, and multi-scalar characters such as flags. Once you've done Exercise 3.9, add a round-trip property test.
 
-**Exercise 11.4:** Write a round-trip test, `decode(encode(x)) == x`, for randomly generated values of the `Movie` type from Section 4.5.
+**Exercise 11.4:** Write a round-trip test, `decode(encode(x)) == x`, for randomly generated values of the `CatalogEntry` type from Section 4.5.
 
 **Exercise 11.5:** Write a parameterized test for `topoSort` (Section 5.6.2) that checks, for every course and each of its prerequisites, that the prerequisite comes first.
 
@@ -711,7 +711,7 @@ Some causes of poor performance turn up in Swift profiles again and again. Knowi
 
 *Blocking in tasks.* A blocking call inside a task holds one of the thread pool's few threads (Section 9.8). A profile in which threads sit idle in `read` or `usleep` while tasks wait to run points to this.
 
-**Exercise 11.10:** Profile the `charcount` program of Section 4.3 on a large file. Where does the time go? Add a fast path for ASCII input that works on the `utf8` view, and measure the gain.
+**Exercise 11.10:** Profile the `anagrams` program of Section 4.3 on a large file. Where does the time go? Add a fast path for ASCII input that works on the `utf8` view, and measure the gain.
 
 **Exercise 11.11:** Write a loop that accidentally copies an array on every iteration, as described under "Accidental copies" above. Confirm with a profiler that the copying dominates, then fix it.
 

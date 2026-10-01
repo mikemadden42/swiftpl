@@ -196,7 +196,7 @@ When should you use a class rather than a struct? Use a struct by default. Use a
 
 In Go, `nil` is a valid value for a pointer receiver, so a method can be called on a `nil` linked list to mean "the empty list." Swift's references are never `nil` unless their type is optional, so the question doesn't arise in the same way. Instead, there are two common designs.
 
-The first is to make emptiness a case of an enum, as we did with `Tree` in Section 4.4:
+The first is to make emptiness a case of an enum, as the `List` type of Section 4.4 does with its `end` case:
 
 ```swift
 /// An IntList is a linked list of integers.

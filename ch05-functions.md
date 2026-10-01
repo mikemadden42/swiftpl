@@ -84,7 +84,7 @@ You may occasionally encounter a function declaration without a body, indicating
 
 ## 5.2. Recursion
 
-Functions may be *recursive*, that is, they may call themselves, either directly or indirectly. Recursion is a powerful technique for many problems, and of course it's essential for processing recursive data structures. In Section 4.4, we used recursion over a tree to implement a simple insertion sort. In this section, we'll use it again for processing HTML documents.
+Functions may be *recursive*, that is, they may call themselves, either directly or indirectly. Recursion is a powerful technique for many problems, and of course it's essential for processing recursive data structures. In Section 4.4, we used recursion to measure and print a tree of files. In this section, we'll use it again for processing HTML documents.
 
 The example program below uses SwiftSoup, an open-source HTML parser for Swift (`https://github.com/scinfu/SwiftSoup`). It reads HTML text, tolerating the many errors found in real-world pages, and produces a tree of nodes. HTML has several kinds of nodes (text, comments, and so on), but here we are concerned only with *elements* of the form `<name key='value'>`. In SwiftSoup, every node is an instance of the class `Node`, and elements are instances of its subclass `Element`, whose `tagName()` method returns the element's name and whose `attr(_:)` method returns the value of an attribute.
 
@@ -255,9 +255,9 @@ let (words, images) = countWordsAndImages(doc)
 
 Swift has no "bare return" of named results as Go does. A tuple result is always returned with an explicit `return (words, images)`.
 
-**Exercise 5.5:** Implement `countWordsAndImages`. (See Exercise 4.10 for word splitting.)
+**Exercise 5.5:** Implement `countWordsAndImages`. (Section 4.3 shows how to split text into words.)
 
-**Exercise 5.6:** Modify the `corner` function in `swiftpl/ch3/surface` (Section 3.2) to return a labeled tuple `(x: Double, y: Double)`, and use the labels at the call sites.
+**Exercise 5.6:** In the `heatmap` program of Section 3.2.1, move the computation of a cell's `(x, y)` coordinates into a function that returns a labeled tuple `(x: Double, y: Double)`, and use the labels at the call site.
 
 ## 5.4. Errors
 

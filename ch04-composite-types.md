@@ -1,157 +1,126 @@
 # 4. Composite Types
 
-In Chapter 3 we discussed the basic types that serve as building blocks for data structures in a Swift program; they are the atoms of our universe. In this chapter, we'll take a look at *composite* types, the molecules created by combining the basic types in various ways. We'll talk about five such types: arrays, slices, dictionaries, sets, and structs, along with their anonymous cousin, the tuple. At the end of this chapter, we'll show how structured data using these types can be encoded as and decoded from JSON data and used to generate HTML from templates.
+Chapter 3 covered Swift's basic types, the individual values from which everything else is built. This chapter is about combining them. Swift's standard library provides three general-purpose collections, *arrays*, *dictionaries*, and *sets*, along with array *slices*, which view part of an array; the language provides *structs* for grouping named values into new types, and *tuples* for grouping values without naming the group. At the end of the chapter, we'll use these types together to read structured data from a web service as JSON, and to produce reports from it, as text and as safely escaped HTML.
 
-All of the types in this chapter are *value types*. An array, a dictionary, or a struct behaves like an integer: assigning it to another variable or passing it to a function gives the recipient an independent value, and modifying one copy never affects another. Swift implements the collections with *copy-on-write* storage, so this independence doesn't cost a copy unless one is truly needed. This combination of value semantics with efficient sharing is one of the most distinctive things about Swift, and we'll look at how it works in Section 4.2.
+One property ties the chapter together: all of these types are *values*. Assigning an array, passing a dictionary to a function, or storing a struct in another struct gives the recipient its own independent copy, and changing that copy never affects the original, exactly as with an `Int`. If that sounds expensive, it isn't, because Swift's collections share their storage until the moment one copy is modified. Section 4.2 explains how this *copy-on-write* technique works.
 
 ## 4.1. Arrays
 
-An array is an ordered, random-access collection of elements of a single type. Swift's `Array` is dynamically sized: it can grow and shrink as elements are added and removed. (In this respect it's closer to Go's slices, C++'s `std::vector`, or Java's `ArrayList` than to Go's fixed-length arrays.) The type `Array<Element>` is almost always written with the shorthand `[Element]`.
+An `Array` is an ordered collection of elements, all of one type, that can be accessed by integer position. Swift's arrays grow and shrink as needed, more like Java's `ArrayList`, C++'s `std::vector`, or Go's slices than like the fixed-size arrays of C. The type `Array<Element>` is nearly always written `[Element]`.
 
-Individual array elements are accessed with the conventional subscript notation, where subscripts run from zero to one less than the array's count. The `count` property returns the number of elements, and `isEmpty` tests for zero elements.
+An array is usually created with an *array literal*, or with an initializer that repeats a value:
 
 ```swift
-var a = [Int](repeating: 0, count: 3)  // array of 3 integers, all 0
-print(a[0])  // print the first element
-print(a[a.count - 1])  // print the last element, a[2]
-
-// Print the indices and elements.
-for (i, v) in a.enumerated() {
-    print(i, v)
-}
-
-// Print the elements only.
-for v in a {
-    print(v)
-}
+var queue = ["build", "test", "deploy"]  // [String]
+let zeros = [Double](repeating: 0, count: 5)  // [0.0, 0.0, 0.0, 0.0, 0.0]
+let empty: [Int] = []
 ```
 
-Swift has no zero values, so an array is created either from an *array literal*, a list of values in brackets, or with an initializer such as `init(repeating:count:)`:
+Elements are numbered from zero. `count` gives their number and `isEmpty` tests for none. Subscripting reads or writes an element, and every subscript is checked: an index outside `0..<count` traps immediately, rather than reading or writing whatever memory happens to lie beyond the array:
 
 ```swift
-let q = [1, 2, 3]
-let r: [Double] = [1, 2, 3]  // the literals become Doubles
-let empty: [String] = []
+print(queue[0])  // "build"
+queue[2] = "release"
+print(queue[3])  // Fatal error: Index out of range
 ```
 
-Every subscript operation is checked. Accessing an element outside the range `0..<count` is a run-time error that traps the program immediately, rather than reading or writing some other memory:
+When an index might be invalid, check it first, or use one of the many accessors that return an optional instead of trapping, such as `first`, `last`, `firstIndex(of:)`, `randomElement()`, and `popLast()`:
 
 ```swift
-let r = [1, 2, 3]
-print(r[3])  // Fatal error: Index out of range
-```
-
-When an index might be out of range, check first, or use the safe accessors that return optionals: `first`, `last`, `randomElement()`, `firstIndex(of:)`, and so on.
-
-```swift
-if let last = r.last {
-    print(last)  // "3"
+if let next = queue.first {
+    print("next up: \(next)")
 }
 ```
 
-Arrays grow with `append(_:)` and `append(contentsOf:)`, or the `+=` operator; they shrink with `removeLast()`, `removeFirst()`, `remove(at:)`, or `removeAll()`; and `insert(_:at:)` inserts an element anywhere:
+Arrays grow with `append`, `append(contentsOf:)`, `+=`, and `insert(_:at:)`, and shrink with `remove(at:)`, `removeFirst()`, `removeLast()`, and `removeAll()`:
 
 ```swift
-var names = ["Bob"]
-names.append("Carol")
-names += ["Dave", "Eve"]
-names.insert("Alice", at: 0)
-print(names)  // "["Alice", "Bob", "Carol", "Dave", "Eve"]"
-names.remove(at: 2)
-print(names)  // "["Alice", "Bob", "Dave", "Eve"]"
+queue.append("announce")
+queue.insert("lint", at: 0)
+print(queue)  // "["lint", "build", "test", "release", "announce"]"
+queue.removeFirst()
+print(queue)  // "["build", "test", "release", "announce"]"
 ```
 
-If an array's element type conforms to `Equatable`, then the array does too, so we may compare two arrays directly using the `==` operator, which reports whether they have the same elements in the same order:
+Iterating with `for`-`in` visits the elements in order; `enumerated()` supplies their offsets too, and `indices` gives just the valid indices:
 
 ```swift
-let a = [1, 2]
-let b = [1, 2]
-let c = [1, 3]
-print(a == b, a == c, b == c)  // "true false false"
+for (i, step) in queue.enumerated() {
+    print("\(i + 1). \(step)")
+}
 ```
 
-Arrays aren't `Comparable`, since there's more than one reasonable way to order them, but they have a method `lexicographicallyPrecedes(_:)` for the most common ordering.
+Two arrays can be compared with `==` when their elements can be, which is to say when the element type conforms to `Equatable`. Arrays are equal if they have the same elements in the same order. There's no `<` for arrays, since there's no single obvious way to order them, but `lexicographicallyPrecedes(_:)` provides the dictionary-style ordering when that's what you want.
 
-As a more plausible example of comparison, the `SHA256` type from the `swift-crypto` package (which provides the same API as Apple's CryptoKit framework on all platforms) produces the SHA256 cryptographic hash or *digest* of a message. A SHA256 digest has 256 bits, which the library represents as a value of type `SHA256.Digest`. Digests are `Equatable` and are sequences of `UInt8`, so they can be compared, iterated, and converted to arrays.
+Fixed-size sequences of bytes are a common kind of array-like data, and comparing them is a common task. The `swift-crypto` package, which provides Apple's CryptoKit API on every platform, computes cryptographic hashes; a SHA-256 *digest* is 32 bytes that act as a fingerprint of any amount of data. One use is checking that a download arrived intact, by comparing its digest with one published by the source:
 
 ```swift
-// swiftpl/ch4/sha256
+// swiftpl/ch4/verify
 import Crypto
+import Foundation
 
-let c1 = SHA256.hash(data: Array("x".utf8))
-let c2 = SHA256.hash(data: Array("X".utf8))
-print(hex(c1))
-print(hex(c2))
-print(c1 == c2)
+let published = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
 
-func hex(_ digest: some Sequence<UInt8>) -> String {
-    digest.map { String($0, radix: 16).leftPadded(to: 2) }.joined()
-}
+let download = Array("hello".utf8)  // the bytes we received
+let digest = SHA256.hash(data: download)
+let hex = digest.map { String(format: "%02x", $0) }.joined()
+print(hex == published ? "verified" : "corrupted!")  // "verified"
 
-extension String {
-    func leftPadded(to width: Int) -> String {
-        String(repeating: "0", count: max(0, width - count)) + self
-    }
-}
-// Output:
-// 2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881
-// 4b68ab3847feda7d6c62c1fbcbeebfa35eab7351ed5e78f4ddadea5df64b8015
-// false
+let tampered = SHA256.hash(data: Array("hello!".utf8))
+print(digest == tampered)  // "false"
 ```
 
-The two inputs differ by only a single bit, but approximately half the bits are different in the digests. The parameter type `some Sequence<UInt8>` means "some type that is a sequence of bytes," which accepts a digest, an array, or a string's `utf8` view. We'll explain this notation in Chapter 7.
+A digest behaves like a fixed-length array of bytes: it's a `Sequence` of `UInt8`, so `map` can turn each byte into two hex digits, and it's `Equatable`, so two digests can be compared directly. Changing even one byte of the input changes about half the bits of the digest, which is what makes it a reliable fingerprint.
 
-If you need a truly fixed-size array of elements stored inline, without a separate heap allocation, Swift 6.2 adds `InlineArray`. The type `InlineArray<4, Int>` holds exactly four `Int`s directly, the way a C array or Go array does, and can be initialized from an array literal of the right length. It's a specialized tool for performance-sensitive code; ordinary programs should use `Array`.
+For the rare cases where you need a genuinely fixed-size array stored inline, without a separate heap allocation (in a tight numeric loop, say, or a struct that mirrors a hardware layout), Swift 6.2 adds `InlineArray`. `InlineArray<4, Float>` is exactly four `Float`s stored in place, like a C array, and can be created from an array literal of the right length. Ordinary code should use `Array`.
 
-**Exercise 4.1:** Write a function that counts the number of bits that are different in two SHA256 digests.
+**Exercise 4.1:** Write a command, `checksum`, that prints the SHA-256 digest of each file named on its command line. With a `-c` option, it should instead read lines of the form `digest  filename` and report which files fail to match, like `sha256sum -c`.
 
-**Exercise 4.2:** Write a program that prints the SHA256 hash of its standard input by default but supports a command-line flag to print the SHA384 or SHA512 hash instead.
+**Exercise 4.2:** Formatting each byte with `String(format:)` is slow. Write a faster `hex` function that looks up each half-byte in a 16-character table, and measure the difference on a large array of bytes.
 
 ## 4.2. Slices and Copy-on-Write
 
 ### 4.2.1. Array Slices
 
-An `ArraySlice` is a view of a contiguous subsequence of an array. Subscripting an array with a range, or calling a method like `prefix`, `suffix`, `dropFirst`, or `dropLast`, produces a slice:
+Subscripting an array with a range, or calling `prefix`, `suffix`, `dropFirst`, or `dropLast`, produces an `ArraySlice`: a view of a contiguous part of the array that shares its storage:
 
 ```swift
-let months = ["January", "February", "March", "April", "May", "June",
-              "July", "August", "September", "October", "November", "December"]
-let q2 = months[3..<6]
-let summer = months[5..<8]
-print(q2)  // "["April", "May", "June"]"
-print(summer)  // "["June", "July", "August"]"
+let readings = [12.1, 13.4, 15.0, 14.2, 16.8, 18.3, 17.5]  // a week of daily highs
+let weekdays = readings[0..<5]
+let weekend = readings[5...]
+print(weekdays.max()!, weekend.max()!)  // "16.8 18.3"
 ```
 
-Making a slice is cheap: it doesn't copy the elements, but shares the array's storage. A slice supports all the same operations as an array (it's a collection, it can be iterated, subscripted, and even appended to), so most functions that work on arrays can be written to accept slices too, as we'll see in Chapter 7 when we write generic functions over `Collection`.
+Slicing is cheap, since no elements are copied, and a slice supports everything an array does: iteration, subscripting, `map`, `sorted`, and even mutation. Many functions can therefore accept either, as we'll see when we write generic functions over `Collection` in Chapter 7.
 
-There's one surprise that catches every newcomer. A slice keeps the indices of its base collection. The first element of `q2` is not `q2[0]` but `q2[3]`:
+A slice has one property that surprises nearly everyone at first. It keeps the *indices of the array it came from*. The first element of `weekend` isn't `weekend[0]`:
 
 ```swift
-print(q2.startIndex, q2.endIndex)  // "3 6"
-print(q2[3])  // "April"
-print(q2[0])  // Fatal error: Index out of bounds
+print(weekend.startIndex, weekend.endIndex)  // "5 7"
+print(weekend[5])  // "18.3"
+print(weekend[0])  // Fatal error: Index out of bounds
 ```
 
-This is deliberate. Because indices are preserved, an index found in a slice is valid in the base array, and vice versa, which makes algorithms that progressively narrow a range (binary search, parsing) natural and free of offset arithmetic. The rule to remember is to use `startIndex` and `endIndex`, or `first` and `last`, with slices, never literal 0 and `count`. If you need a zero-based array, convert the slice: `Array(q2)`.
+The reason is that it makes slices compose cleanly. An index found in a slice is valid in the original array, and an index from the array is valid in any slice that contains it, so algorithms that repeatedly narrow a range, like binary search and parsers, never have to adjust offsets. The habit to form is to use `startIndex`, `endIndex`, `first`, and `last` with any collection, never the literal `0` or `count`. If you need zero-based indices, make an array: `Array(weekend)`.
 
-Since a slice shares storage with its base, a slice also keeps the whole base array alive. As with substrings, slices are intended for temporary use. Convert a slice to an `Array` before storing it for the long term.
+Because a slice shares storage with its array, it also keeps the whole array alive. Use slices for temporary work and convert to `Array` before storing one for long.
 
 ### 4.2.2. Copy-on-Write
 
-Swift collections are values, which means that this code is guaranteed to leave `a` unchanged:
+Arrays have value semantics, which guarantees the following:
 
 ```swift
-var a = [1, 2, 3]
-var b = a
-b[0] = 99
-print(a)  // "[1, 2, 3]"
+var original = [1, 2, 3]
+var copy = original
+copy[0] = 99
+print(original)  // "[1, 2, 3]"
 ```
 
-But copying an array of a million elements every time it's assigned or passed to a function would be prohibitively expensive, so Swift doesn't. An array is internally a single reference to a heap-allocated buffer that holds the count, the capacity, and the elements. Assigning the array copies only the reference and increments the buffer's reference count, so after `var b = a` both arrays share one buffer. Before any *mutating* operation, an array checks whether its buffer is uniquely referenced. If it is, it modifies the buffer in place. If not, which is the case for `b[0] = 99` above, it first makes a copy of the buffer for itself, and then modifies the copy. This strategy is called *copy-on-write* (COW).
+Copying an array of a million elements on every assignment would make that guarantee ruinously expensive, so Swift doesn't do it. An array value is really a reference to a heap buffer holding the elements, along with their count and the buffer's capacity. `var copy = original` copies only that reference and increments the buffer's reference count, so the two arrays share a buffer. Every *mutating* operation first checks whether the array's buffer is shared. If it's not, the mutation happens in place. If it is, as for `copy[0] = 99` above, the array first makes its own copy of the buffer, and then mutates the copy. Hence the name, *copy-on-write*.
 
-The upshot is that passing a collection to a function, returning it, or storing it in another variable costs O(1), and copies happen only when they're needed to preserve value semantics. Mutating a uniquely referenced array in place, the common case, is as fast as mutating a C array.
+The effect is that passing collections around, returning them from functions, and storing them in other values costs no more than passing a pointer, while code reasons about them as independent values. A copy happens only when it's needed to keep that illusion intact.
 
-You can use the same technique for your own types. The standard library function `isKnownUniquelyReferenced(_:)` reports whether a class instance has exactly one strong reference, which is all you need:
+The same technique is available for your own types. `isKnownUniquelyReferenced(_:)` tells you whether a class instance has exactly one strong reference, and that's all copy-on-write requires:
 
 ```swift
 // swiftpl/ch4/cow
@@ -180,829 +149,778 @@ struct Vector {
 }
 ```
 
-This example is a little contrived, since the `[Double]` inside `Buffer` is already copy-on-write, but in real code the class would hold something that isn't a value, like a manually managed block of memory, a C library's object, or a large tree structure, and the struct would give it value semantics.
+This particular example is artificial, since the `[Double]` inside `Buffer` is already copy-on-write. The technique matters when the shared storage is something that isn't a value on its own, such as a manually managed block of memory, an object from a C library, or a large tree of nodes, and you want to give it value semantics.
 
 ### 4.2.3. Growing an Array
 
-An array has a *capacity*, the number of elements its buffer can hold before it must be reallocated. When an append exceeds the capacity, the array allocates a larger buffer, roughly double the size, and moves the elements into it. Doubling means that, although an individual append is occasionally expensive, the average cost of an append is constant. You can watch it happen:
+An array's buffer has a *capacity*: the number of elements it can hold before it must be replaced by a bigger one. When an append finds the buffer full, the array allocates a new buffer about twice as large and moves the elements over. Most appends are therefore cheap, an occasional one is expensive, and the average cost is constant. We can watch the capacity grow:
 
 ```swift
-var x: [Int] = []
-var lastCapacity = -1
+var values: [Int] = []
+var capacities: [Int] = []
 for i in 0..<100 {
-    x.append(i)
-    if x.capacity != lastCapacity {
-        print("count=\(x.count) capacity=\(x.capacity)")
-        lastCapacity = x.capacity
+    values.append(i)
+    if values.capacity != capacities.last {
+        capacities.append(values.capacity)
     }
 }
+print(capacities)
 ```
 
-The exact growth pattern is an implementation detail and varies with element size, but a typical run on a 64-bit machine prints:
+On one 64-bit system, this printed:
 
 ```
-count=1 capacity=2
-count=3 capacity=4
-count=5 capacity=8
-count=9 capacity=16
-count=17 capacity=32
-count=33 capacity=64
-count=65 capacity=128
+[2, 4, 8, 16, 32, 64, 128]
 ```
 
-If you know in advance how many elements you'll add, call `reserveCapacity(_:)` first to do the allocation just once. Or, better, construct the array in a single step from a sequence, with `Array(sequence)` or `map`, which sizes the buffer correctly.
+The details of the growth policy are up to the implementation and vary with element size. When you know how many elements are coming, `reserveCapacity(_:)` allocates once up front. Better still, create the array in one step, with `Array(someSequence)` or `map`, which size the buffer correctly from the start.
 
-Go programmers must remember to write `s = append(s, x)`, because the append may or may not return a slice that shares the original's storage. In Swift, `append` mutates the array variable in place, and the question of sharing doesn't arise: thanks to copy-on-write, it's impossible to observe whether two array values share a buffer.
+Since `append` modifies the array variable in place, and copy-on-write hides whether storage is shared, a Swift programmer never has to wonder whether an append produced an array that aliases another. There's no way to observe it.
 
-### 4.2.4. In-Place Array Techniques
+### 4.2.4. In-Place Algorithms
 
-Many useful algorithms modify the elements of an array in place. The `reverse` function below reverses the elements of an `[Int]` array by swapping from both ends toward the middle:
+Many array algorithms rearrange elements where they are, without allocating a second array. A good example is shuffling. The *Fisher–Yates* algorithm walks backwards through the array, swapping each element with one chosen at random from those not yet placed:
 
 ```swift
-// swiftpl/ch4/rev
-func reverse(_ a: inout [Int]) {
-    var (i, j) = (0, a.count - 1)
-    while i < j {
+// swiftpl/ch4/shuffle
+func shuffle<T>(_ a: inout [T], using rng: inout some RandomNumberGenerator) {
+    for i in stride(from: a.count - 1, to: 0, by: -1) {
+        let j = Int.random(in: 0...i, using: &rng)
         a.swapAt(i, j)
-        i += 1
-        j -= 1
     }
 }
 
-var a = [0, 1, 2, 3, 4, 5]
-reverse(&a)
-print(a)  // "[5, 4, 3, 2, 1, 0]"
+var deck = Array(1...10)
+var rng = SystemRandomNumberGenerator()
+shuffle(&deck, using: &rng)
+print(deck)  // e.g., "[7, 2, 10, 4, 1, 9, 3, 8, 6, 5]"
 ```
 
-(The standard library's `reverse()` method does the same for any mutable, bidirectional collection, so in practice you'd write `a.reverse()`.)
+Every ordering is equally likely, and the algorithm takes linear time with no extra memory. The `<T>` makes `shuffle` *generic*, so that it works on arrays of any element type (Section 7.7), and `swapAt` exchanges two elements in place. The standard library's `shuffle()` and `shuffled()` methods do the same job, of course.
 
-A simple way to *rotate* an array left by *n* elements is to apply the reverse function three times, first to the leading *n* elements, then to the remaining elements, and finally to the whole array. The library method works on slices too, and mutating a slice of a `var` array through a range subscript modifies the array's own elements in place:
-
-```swift
-var s = [0, 1, 2, 3, 4, 5]
-// Rotate s left by two positions.
-s[..<2].reverse()
-s[2...].reverse()
-s.reverse()
-print(s)  // "[2, 3, 4, 5, 0, 1]"
-```
-
-Let's see more examples of in-place functions. Given a list of strings, the `nonempty` function removes the empty ones. In Go, one writes a loop that reuses the slice's storage; in Swift, the standard library already provides the in-place algorithm as `removeAll(where:)`:
+The standard library includes other in-place algorithms that are worth knowing. `removeAll(where:)` deletes every element matching a condition, in a single pass with no reallocation. `partition(by:)` rearranges elements so that those matching a condition come last, and returns the index where they begin:
 
 ```swift
-// swiftpl/ch4/nonempty
-var data = ["one", "", "three"]
-data.removeAll(where: { $0.isEmpty })
-print(data)  // "["one", "three"]"
-```
-
-`removeAll(where:)` takes a *closure*, an anonymous function, that is called for each element and returns `true` for elements to remove. Inside a closure, `$0` refers to the first parameter. It runs in linear time, moving each kept element at most once, and doesn't allocate. If you instead want a new array without disturbing the original, use `filter`, which keeps the elements for which the closure returns `true`:
-
-```swift
-let nonEmpty = data.filter { !$0.isEmpty }
-```
-
-An array can be used to implement a stack. Given an initially empty array `stack`, we can push a new value onto the end with `append`, look at the top with `last`, and pop with `popLast()`, which returns `nil` if the stack is empty:
-
-```swift
-var stack: [Int] = []
-stack.append(1)  // push 1
-stack.append(2)  // push 2
-let top = stack.last  // Optional(2)
-let popped = stack.popLast()  // Optional(2), stack is now [1]
-```
-
-To remove an element from the middle, `remove(at:)` shifts the later elements down to fill the gap, preserving order, in O(*n*) time. If order doesn't matter, it's faster to swap the element with the last one and then remove the last:
-
-```swift
-func remove<T>(_ a: inout [T], at i: Int) {
-    a.swapAt(i, a.count - 1)
-    a.removeLast()
+struct Job {
+    var title: String
+    var done: Bool
 }
+
+var jobs = [
+    Job(title: "write tests", done: true),
+    Job(title: "fix bug #12", done: false),
+    Job(title: "update docs", done: true),
+    Job(title: "release 1.2", done: false),
+]
+let firstDone = jobs.partition(by: { $0.done })
+print(jobs[..<firstDone].map(\.title))  // the two unfinished jobs, in some order
+jobs.removeAll(where: { $0.done })
+print(jobs.count)  // "2"
 ```
 
-The `<T>` makes `remove` a *generic* function that works for arrays of any element type. We'll explain generics in Section 7.7.
+The closures passed to these methods are *predicates*: functions that return `true` for the elements of interest. In a closure, `$0` refers to its first argument, and `\.title` is a *key path* that can stand in for the closure `{ $0.title }` (Section 6.4). Note that `partition` doesn't preserve the original order within each group; when order matters, `filter` builds a new array in order instead.
 
-**Exercise 4.3:** Rewrite our `reverse` to reverse an `ArraySlice<Int>` in place, using `startIndex` and `endIndex` rather than 0 and `count`.
+An array also makes a natural *stack*: `append` pushes, `last` peeks, and `popLast()` pops, returning `nil` when the stack is empty. An undo history is a typical use:
 
-**Exercise 4.4:** Write a version of `rotate` that operates in a single pass.
+```swift
+var document = "Hello"
+var history: [String] = []
 
-**Exercise 4.5:** Write an in-place function to eliminate adjacent duplicates in a `[String]` array.
+history.append(document)
+document += ", world"
+history.append(document)
+document += "!"
 
-**Exercise 4.6:** Write an in-place function that squashes each run of adjacent Unicode whitespace in the `utf8` bytes of a `[UInt8]` array into a single ASCII space.
+if let previous = history.popLast() {  // undo
+    document = previous
+}
+print(document)  // "Hello, world"
+```
 
-**Exercise 4.7:** Modify `Vector` from Section 4.2.2 to count how many times it copies its buffer, and write a short program that shows when copies happen.
+**Exercise 4.3:** Implement your own `partition(_:by:)` for arrays, using `swapAt`, and test it against the standard library's version on random inputs.
+
+**Exercise 4.4:** Write an in-place function that moves every zero in an `[Int]` to the end while keeping the other elements in their original order, in a single pass.
+
+**Exercise 4.5:** Write a function that collapses runs of identical adjacent lines in a `[String]`, in place, replacing each run of two or more with a single line followed by a count, like `"connection reset (x3)"`.
+
+**Exercise 4.6:** Reverse the order of the words in a sentence stored as a `[Character]`, in place, without creating a second array. (Hint: reverse the whole array, then reverse each word.)
+
+**Exercise 4.7:** Instrument the `Vector` type from Section 4.2.2 to count how many times it copies its buffer, and write a program that shows exactly when copies occur.
 
 ## 4.3. Dictionaries and Sets
 
 ### 4.3.1. Dictionaries
 
-The hash table is one of the most ingenious and versatile of all data structures. It is an unordered collection of key/value pairs in which all the keys are distinct, and the value associated with a given key can be retrieved, updated, or removed using a constant number of key comparisons on the average, no matter how large the hash table.
+A *dictionary* associates keys with values, and finds, adds, or removes the value for a key in constant time on average, however many entries it holds. It's built on a *hash table*, one of the most broadly useful data structures ever devised. Swift's type is `Dictionary<Key, Value>`, written `[Key: Value]`.
 
-In Swift, the hash table is called a *dictionary*, of type `Dictionary<Key, Value>`, written `[Key: Value]`. All of the keys in a given dictionary are of the same type, and all of the values are of the same type, but the keys need not be of the same type as the values. The key type must conform to the `Hashable` protocol, which means its values can be compared with `==` and fed to a hash function. All the basic types are `Hashable`, as are tuples' components, optionals, arrays, and sets whose elements are `Hashable`, and any struct or enum that declares the conformance and whose members are all `Hashable`.
+Keys must conform to `Hashable`, meaning that they can be compared with `==` and reduced to a hash value. All the basic types are `Hashable`, as are optionals, arrays, and sets of `Hashable` elements, and any struct or enum whose members are `Hashable` can declare the conformance and get it for free. Values may be of any type.
 
-A dictionary can be created with a *dictionary literal*:
+A dictionary literal lists key-value pairs:
 
 ```swift
-var ages = [
-    "alice": 31,
-    "charlie": 34,
+var stock = [
+    "apples": 12,
+    "pears": 0,
+    "plums": 30,
 ]
 ```
 
-and an empty dictionary is written `[:]` (when the type can be inferred) or `[String: Int]()`.
+An empty dictionary is written `[:]` when its type is known from context, or `[String: Int]()`.
 
-Dictionary elements are accessed through the usual subscript notation. Because the key might not be present, the result is an optional:
+Subscripting a dictionary by key gives an *optional*, because the key might be missing:
 
 ```swift
-ages["alice"] = 32
-print(ages["alice"] as Any)  // "Optional(32)"
-print(ages["bob"] as Any)  // "nil"
+print(stock["plums"] as Any)  // "Optional(30)"
+print(stock["kiwis"] as Any)  // "nil"
 ```
 
-and removed by assigning `nil`, or with `removeValue(forKey:)`, which returns the removed value:
+Assigning through a subscript adds or replaces an entry, and assigning `nil` removes one (as does `removeValue(forKey:)`, which also returns the old value):
 
 ```swift
-ages["alice"] = nil  // remove element ages["alice"]
+stock["kiwis"] = 8
+stock["pears"] = nil  // sold out: remove it
 ```
 
-The optional result forces you to decide what a missing key means. Often, a missing key should behave as if it had some default value, and the `default:` subscript expresses that. So we can increment a count even if the key isn't there yet:
+Often a missing key should simply behave like a default value, and the `default:` form of the subscript says so. It also allows the value to be updated in place:
 
 ```swift
-ages["bob", default: 0] += 1  // happy birthday!
+stock["apples", default: 0] -= 3  // sold three
+stock["figs", default: 0] += 20  // a new delivery
 ```
 
-Because a dictionary is a value, a `let` dictionary can't be modified, and a dictionary inside a struct is copied along with the struct.
-
-To enumerate all the key/value pairs in a dictionary, we use a `for`-`in` loop. Successive iterations of the loop yield a tuple with `key` and `value` components:
+Iterating over a dictionary yields `(key, value)` pairs, in an order that is unspecified and varies between runs. Swift seeds its hash function randomly in each process, both to keep programs from depending on an accidental order and to defeat attacks that feed a server keys chosen to collide. When order matters, sort:
 
 ```swift
-for (name, age) in ages {
-    print("\(name)\t\(age)")
+for (fruit, count) in stock.sorted(by: { $0.key < $1.key }) {
+    print("\(fruit)\t\(count)")
 }
 ```
 
-The order of dictionary iteration is unspecified, and different runs of the same program will see different orders. (Swift randomizes its hash seed per process, both to discourage code from depending on the order and to defend against denial-of-service attacks that exploit predictable hashing.) To enumerate the pairs in order, we must sort the keys explicitly:
-
-```swift
-for name in ages.keys.sorted() {
-    print("\(name)\t\(ages[name]!)")
-}
-```
-
-The `!` is the *force-unwrap* operator. It extracts the value from an optional, trapping if the optional is `nil`. Use it only when you can prove the value is present, as here, since every name came from the dictionary's own keys. A clearer alternative avoids the unwrap altogether by sorting the pairs:
-
-```swift
-for (name, age) in ages.sorted(by: { $0.key < $1.key }) {
-    print("\(name)\t\(age)")
-}
-```
-
-Like arrays, dictionaries can be compared with `==` if their values are `Equatable`; two dictionaries are equal if they contain the same keys with equal values.
-
-A few more dictionary operations are worth knowing. `Dictionary(grouping:by:)` groups a sequence's elements by a key computed from each one; `Dictionary(uniqueKeysWithValues:)` builds a dictionary from pairs; `mapValues` transforms every value; `merge` combines two dictionaries, with a closure to resolve conflicts:
+Dictionaries are values like arrays, so a `let` dictionary is immutable, and they can be compared with `==` when their values are `Equatable`. A few more operations come up often. `Dictionary(grouping:by:)` sorts a sequence into buckets by a computed key; `mapValues` transforms every value; and `merge(_:uniquingKeysWith:)` combines two dictionaries, resolving clashes with a closure:
 
 ```swift
 let words = ["apple", "avocado", "banana", "blueberry", "cherry"]
-let byLetter = Dictionary(grouping: words, by: { $0.first! })
+let byInitial = Dictionary(grouping: words, by: { $0.first! })
 // ["a": ["apple", "avocado"], "b": ["banana", "blueberry"], "c": ["cherry"]]
-let lengths = byLetter.mapValues { $0.count }
-// ["a": 2, "b": 2, "c": 1]
+
+var morning = ["apples": 5, "plums": 2]
+morning.merge(["plums": 3, "figs": 1], uniquingKeysWith: +)
+// ["apples": 5, "plums": 5, "figs": 1]
 ```
 
 ### 4.3.2. Sets
 
-Go has no set type, so Go programs use a map whose values are ignored. Swift has `Set<Element>`, an unordered collection of distinct `Hashable` elements, with constant-time membership tests and the full complement of set algebra: `union`, `intersection`, `subtracting`, `symmetricDifference`, `isSubset(of:)`, and their in-place versions. A set can be written with an array literal when its type is known:
+A `Set` is an unordered collection of distinct `Hashable` elements, with constant-time membership testing and the operations of set algebra: `union`, `intersection`, `subtracting`, `symmetricDifference`, `isSubset(of:)`, `isDisjoint(with:)`, and in-place forms of each. A set can be written with an array literal when its type is known:
 
 ```swift
-let vowels: Set<Character> = ["a", "e", "i", "o", "u"]
-print(vowels.contains("e"))  // "true"
+let swiftTopics: Set = ["concurrency", "generics", "macros", "testing"]
+let goTopics: Set = ["concurrency", "generics", "testing", "tooling"]
+
+print(swiftTopics.intersection(goTopics).sorted())  // "["concurrency", "generics", "testing"]"
+print(swiftTopics.subtracting(goTopics))  // "["macros"]"
 ```
 
-To illustrate, the program `dedup` reads a sequence of lines and prints only the first occurrence of each distinct line. (It's a variant of the `dup` program from Section 1.3.)
+The `insert` method returns a pair whose `inserted` component tells whether the element was new, which makes "have I seen this before?" a single operation. This program prints each distinct visitor in an access log, one name per line, the first time it appears:
 
 ```swift
-// swiftpl/ch4/dedup
-var seen = Set<String>()  // a set of strings
+// swiftpl/ch4/visitors
+var seen = Set<String>()
 while let line = readLine() {
-    if seen.insert(line).inserted {
-        print(line)
+    guard let name = line.split(separator: " ").first else { continue }
+    if seen.insert(String(name)).inserted {
+        print(name)
     }
 }
 ```
-
-The `insert` method returns a tuple whose `inserted` component is `true` if the element was newly added and `false` if it was already present, so one call both tests and updates the set.
 
 ### 4.3.3. Composite Keys
 
-Sometimes we need a dictionary or set whose keys are not simple strings but something richer: a pair of coordinates, a list of strings, a record with several fields. In Go, keys must be comparable, which rules out slices, and a common workaround is to convert each key to a string first. In Swift, no such trick is necessary. Arrays of `Hashable` elements are themselves `Hashable`, and so is any struct whose stored properties are all `Hashable`, if it declares the conformance:
+Keys needn't be simple. A struct whose properties are all `Hashable` can be a key, if it declares the conformance, and so can an array of `Hashable` elements:
 
 ```swift
-struct Point: Hashable {
-    var x, y: Int
+struct GridPoint: Hashable {
+    var row, column: Int
 }
 
-var visited = Set<Point>()
-visited.insert(Point(x: 1, y: 2))
+var occupied = Set<GridPoint>()
+occupied.insert(GridPoint(row: 3, column: 4))
 
-var counts: [[String]: Int] = [:]
-counts[["a", "b"], default: 0] += 1
+var routeCounts: [[String]: Int] = [:]
+routeCounts[["home", "office"], default: 0] += 1
 ```
 
-The compiler synthesizes `==` and `hash(into:)` by combining the members' implementations. You can write them yourself if the synthesized equality isn't what you want, for example to compare strings case-insensitively; the only rule is that two values that are `==` must produce the same hash.
+The compiler writes `==` and `hash(into:)` for such structs by combining those of their properties. You can write them yourself when the default doesn't fit, for example to compare names without regard to case; the one rule is that values that are equal must produce equal hashes.
 
-Tuples are not `Hashable` (a long-standing limitation of the language), so a struct is the usual choice for a composite key.
+Tuples, unfortunately, can't be `Hashable`, so a small struct is the usual way to make a key out of several values.
 
-### 4.3.4. Example: Counting Characters
+### 4.3.4. Example: Finding Anagrams
 
-Here's an example that counts the occurrences of each distinct Unicode character in its input. Since there are a large number of possible characters, only a small fraction of which would appear in any particular document, a dictionary is a natural way to keep track of just the ones that have been seen and their corresponding counts.
+Two words are *anagrams* if they contain the same letters in a different order, like "listen" and "silent." Sorting a word's letters gives a *signature* that all its anagrams share, which makes a dictionary from signatures to words a natural way to group them:
 
 ```swift
-// swiftpl/ch4/charcount
-// Charcount computes counts of Unicode characters.
-import Foundation
-
-var counts: [Character: Int] = [:]  // counts of Unicode characters
-var utflen = [Int](repeating: 0, count: 5)  // count of lengths of UTF-8 encodings of scalars
-var invalid = 0  // count of invalid UTF-8 sequences
-
-let data = FileHandle.standardInput.readDataToEndOfFile()
-let text = String(decoding: data, as: UTF8.self)
-for c in text {
-    if c == "\u{FFFD}" {
-        invalid += 1
-        continue
-    }
-    counts[c, default: 0] += 1
-    for scalar in c.unicodeScalars {
-        utflen[UTF8.width(scalar)] += 1
+// swiftpl/ch4/anagrams
+// Anagrams reads text and prints each group of words that are anagrams of one another.
+var groups: [String: Set<String>] = [:]
+while let line = readLine() {
+    for word in line.split(whereSeparator: { !$0.isLetter }) {
+        let w = word.lowercased()
+        groups[String(w.sorted()), default: []].insert(w)
     }
 }
 
-print("char\tcount")
-for (c, n) in counts.sorted(by: { $0.value > $1.value }) {
-    print("\(c.debugDescription)\t\(n)")
-}
-print("\nlen\tcount")
-for (i, n) in utflen.enumerated() where i > 0 {
-    print("\(i)\t\(n)")
-}
-if invalid > 0 {
-    print("\n\(invalid) invalid UTF-8 characters")
+for (_, words) in groups.sorted(by: { $0.key < $1.key }) where words.count > 1 {
+    print(words.sorted().joined(separator: " "))
 }
 ```
 
-`String(decoding:as:)` decodes the bytes as UTF-8, replacing each ill-formed sequence with the replacement character U+FFFD, which we count separately. (A genuine U+FFFD in the input would also be counted as invalid. That's a limitation the exercise below asks you to fix.) The program also tallies how many scalars need 1, 2, 3, or 4 bytes in UTF-8.
-
-The output is sorted by decreasing frequency. Using `debugDescription` prints each character as a quoted, escaped literal, so that newlines and tabs are visible:
-
 ```
-char    count
-" "     1203
-"e"     871
-"t"     602
-"\n"    211
-"é"     4
-...
+$ echo "Listen, silent night: enlist the tinsel, google inlets" | swift run anagrams
+enlist inlets listen silent tinsel
 ```
 
-**Exercise 4.8:** Fix `charcount` so that a genuine U+FFFD in the input isn't counted as invalid. (Hint: decode the `utf8` bytes yourself with `Unicode.UTF8.ForwardParser`, or compare `String(validating:)` results line by line.)
+`split(whereSeparator:)` breaks each line into words at every character that isn't a letter, and `sorted()` on a `String` returns its characters as a sorted array, which `String(_:)` turns back into a string to serve as the key. Each value is a `Set`, so that a word repeated in the input appears only once in its group, and the `default:` subscript creates an empty set the first time a signature is seen, then inserts into it in place. The output loop sorts the groups by signature, so the output is the same on every run, and the `where` clause skips words that have no anagram partners.
 
-**Exercise 4.9:** Modify `charcount` to count letters, digits, and so on in their Unicode categories, using properties like `Character.isLetter` and `Unicode.Scalar.Properties.generalCategory`.
+**Exercise 4.8:** Real anagram finders ignore accents, so that "résumé" and "sumere" might count. Use `folding(options:locale:)` from Foundation to normalize words before computing their signatures.
 
-**Exercise 4.10:** Write a program `wordfreq` to report the frequency of each word in an input text file. Use `split(whereSeparator:)` with `\.isWhitespace` to break the input into words.
+**Exercise 4.9:** Write `wordcount`, which reports the ten most frequent words in its input along with their counts, ignoring case.
 
-### 4.3.5. Graphs
+**Exercise 4.10:** Modify `anagrams` to print, for each group, how many times each of its words appeared in the input.
 
-The value type of a dictionary can itself be a composite type, such as a set or another dictionary. In the following code, the key type of `graph` is `String` and the value type is `Set<String>`, representing a set of strings. Conceptually, `graph` maps a string to a set of related strings, its successors in a directed graph.
+### 4.3.5. Nested Collections
+
+A dictionary's values can be collections themselves. A *concordance* records, for each word in a text, the lines on which it appears, which is a natural `[String: [Int]]`:
 
 ```swift
-// swiftpl/ch4/graph
-var graph: [String: Set<String>] = [:]
-
-func addEdge(_ from: String, _ to: String) {
-    graph[from, default: []].insert(to)
+// swiftpl/ch4/concordance
+var index: [String: [Int]] = [:]
+var lineNumber = 0
+while let line = readLine() {
+    lineNumber += 1
+    let words = Set(line.lowercased().split(whereSeparator: { !$0.isLetter }))
+    for word in words {
+        index[String(word), default: []].append(lineNumber)
+    }
 }
 
-func hasEdge(_ from: String, _ to: String) -> Bool {
-    graph[from]?.contains(to) ?? false
+for word in index.keys.sorted() {
+    let lines = index[word]!.map(String.init).joined(separator: ", ")
+    print("\(word): \(lines)")
 }
 ```
 
-The `addEdge` function shows the idiomatic way to populate a dictionary lazily, initializing each value when its key first appears. The `default:` subscript returns an empty set for a new key, and `insert` modifies the set in place inside the dictionary, without a copy.
+The `default:` subscript creates an empty array for a word the first time it's seen, and `append` then extends that array in place, inside the dictionary, without copying it. Putting each line's words in a `Set` first ensures that a line number is recorded only once, even if a word appears twice on the line.
 
-The `hasEdge` function uses *optional chaining*: `graph[from]?.contains(to)` calls `contains` only if `graph[from]` is non-`nil`, and the whole expression evaluates to `nil` otherwise. The `??` then supplies `false` for missing vertices.
+The force-unwrap `index[word]!` in the output loop is safe because `word` came from the dictionary's own keys. In general, though, a lookup can fail, and *optional chaining* often expresses the intent better: `index["swift"]?.count` is the number of lines mentioning "swift," or `nil` if there are none, and `??` supplies a fallback:
 
-**Exercise 4.11:** Write a program that reads a list of lines of the form `a b`, meaning an edge from `a` to `b`, and prints the vertices in topological order. (We'll return to this problem in Section 5.6.)
+```swift
+print(index["swift"]?.count ?? 0)
+```
+
+**Exercise 4.11:** Extend the concordance to ignore a list of common words ("the," "and," "of," and so on) read from a file, and to print words in order of how many lines they appear on.
 
 ## 4.4. Structs and Tuples
 
-A *struct* is an aggregate data type that groups together zero or more named values of arbitrary types as a single entity. Each value is called a *stored property*. The classic example of a struct from data processing is the employee record, whose properties are a unique ID, the employee's name, address, date of birth, position, salary, manager, and the like. All of these properties are collected into a single entity that can be copied as a unit, passed to functions and returned by them, stored in arrays, and so on.
-
-These two statements declare a struct type called `Employee` and a variable called `dilbert` that is an instance of an `Employee`:
+A *struct* groups named values, called *stored properties*, into a single new type. A library catalog, for example, might describe each book with a struct:
 
 ```swift
 import Foundation
 
-struct Employee {
-    var id: Int
-    var name: String
-    var address: String
-    var dob: Date
-    var position: String
-    var salary: Int
-    var managerID: Int
+struct Book {
+    var title: String
+    var author: String
+    var isbn: String
+    var pages: Int
+    var published: Date
+    var onLoan: Bool
 }
 
-var dilbert = Employee(
-    id: 1, name: "Dilbert", address: "Cubicle 4B", dob: Date(timeIntervalSince1970: 0),
-    position: "Engineer", salary: 5000, managerID: 2)
+var book = Book(
+    title: "The Lighthouse Keeper's Almanac", author: "Mara Quill",
+    isbn: "978-0-00-000001-7", pages: 312, published: Date(timeIntervalSince1970: 1_525_132_800),
+    onLoan: false)
 ```
 
-The individual properties of `dilbert` are accessed using dot notation like `dilbert.name` and `dilbert.dob`. Because `dilbert` is a `var`, its properties are variables too, so we may assign to them:
+Properties are accessed with dot notation, and if the struct is in a `var`, they can be assigned:
 
 ```swift
-dilbert.salary -= 5000  // demoted, for writing too few lines of code
+book.onLoan = true
+print(book.title, book.onLoan)
 ```
 
-If `dilbert` were a `let`, no property of it could be changed, even if the property is declared with `var`. A struct value is immutable as a whole or mutable as a whole, depending only on how the variable holding it is declared. (Properties declared with `let`, however, can never be changed after initialization, even in a `var` struct.)
+A struct is mutable or immutable as a whole. If `book` were a `let`, no property of it could be changed, whether the property is declared with `var` or not. (A property declared with `let` can't be changed even in a `var` struct.) That's a direct consequence of value semantics: a struct value *is* its properties, so changing a property changes the value.
 
-The initializer `Employee(id:name:...)` that we called above is the *memberwise initializer*, which the compiler synthesizes for every struct, with one parameter per stored property in declaration order. If a property has a default value, its parameter has a default too. You can write your own initializers, but if you do so in the struct's body, the memberwise initializer is no longer synthesized. If you want both, put your own initializers in an extension.
+The initializer we called, `Book(title:author:isbn:pages:published:onLoan:)`, is the *memberwise initializer*, which the compiler writes for every struct, with a parameter for each stored property in declaration order; properties with default values get parameters with default arguments. If you write an initializer of your own inside the struct's declaration, the memberwise one is no longer generated; to keep both, put yours in an extension.
 
-Here's a function that looks up an employee by ID and gives the employee a raise. The `employees` array is passed `inout`, and the element is modified in place:
+Because structs are values, updating one inside a collection means updating it *in place*, through the collection, rather than updating a copy:
 
 ```swift
-func giveRaise(to id: Int, in employees: inout [Employee], amount: Int) {
-    if let i = employees.firstIndex(where: { $0.id == id }) {
-        employees[i].salary += amount
+/// Marks the book with the given ISBN as on loan, reporting whether it was available.
+func checkOut(isbn: String, from catalog: inout [Book]) -> Bool {
+    guard let i = catalog.firstIndex(where: { $0.isbn == isbn }), !catalog[i].onLoan else {
+        return false
     }
+    catalog[i].onLoan = true
+    return true
 }
 ```
 
-Note that a function that returned an `Employee` and then modified the result wouldn't change the array, because the returned value would be a copy. This is the essence of value semantics, and you'll soon learn to reach for `inout`, or to modify elements in place through a subscript, when you want changes to stick.
+A version that wrote `var b = catalog[i]; b.onLoan = true` would change a copy and leave the catalog untouched, a common early mistake. The habit to form is to modify elements through the collection's subscript, and to pass the collection `inout` when a function needs to modify it.
 
-Property order is significant to type identity only in the sense that it determines the order of parameters in the memberwise initializer. Two struct declarations with the same properties in the same order are still different types, since every struct declaration creates a new named type.
+Two struct declarations with identical properties are still different types; each declaration introduces a new type with its own name.
 
-A struct named `S` can't declare a stored property of the same type `S`, since an aggregate value can't contain itself; its size would be infinite. To build a recursive data structure like a linked list or a tree, you need a level of indirection, which Swift provides through classes or *indirect enums*. The code below uses an indirect enum to implement an insertion sort using a binary tree:
+### 4.4.1. Recursive Types
+
+A struct can't contain a stored property of its own type, since the value would contain itself and be infinitely large. Recursive data, such as trees, lists, and nested documents, needs a level of indirection, which can come from a class, an array, or an *indirect enum*.
+
+A file-system tree is a good example. A node is either a file, with a size, or a directory, containing other nodes:
 
 ```swift
-// swiftpl/ch4/treesort
-indirect enum Tree {
-    case empty
-    case node(Tree, Int, Tree)
+// swiftpl/ch4/filetree
+enum FileNode {
+    case file(name: String, size: Int)
+    case directory(name: String, children: [FileNode])
 
-    func inserting(_ value: Int) -> Tree {
+    var totalSize: Int {
         switch self {
-        case .empty:
-            return .node(.empty, value, .empty)
-        case let .node(left, v, right):
-            if value < v {
-                return .node(left.inserting(value), v, right)
-            } else {
-                return .node(left, v, right.inserting(value))
+        case .file(_, let size):
+            size
+        case .directory(_, let children):
+            children.reduce(0) { $0 + $1.totalSize }
+        }
+    }
+
+    func printTree(indent: String = "") {
+        switch self {
+        case .file(let name, let size):
+            print("\(indent)\(name) (\(size) bytes)")
+        case .directory(let name, let children):
+            print("\(indent)\(name)/ (\(totalSize) bytes)")
+            for child in children {
+                child.printTree(indent: indent + "  ")
             }
         }
     }
-
-    func appendValues(to values: inout [Int]) {
-        if case let .node(left, v, right) = self {
-            left.appendValues(to: &values)
-            values.append(v)
-            right.appendValues(to: &values)
-        }
-    }
 }
 
-/// Sorts values in place.
-func treeSort(_ values: inout [Int]) {
-    var root = Tree.empty
-    for v in values {
-        root = root.inserting(v)
-    }
-    values.removeAll(keepingCapacity: true)
-    root.appendValues(to: &values)
-}
+let project = FileNode.directory(name: "app", children: [
+    .file(name: "Package.swift", size: 512),
+    .directory(name: "Sources", children: [
+        .file(name: "main.swift", size: 2048),
+        .file(name: "Model.swift", size: 4096),
+    ]),
+    .file(name: "README.md", size: 1024),
+])
+project.printTree()
 ```
 
-The `indirect` keyword tells the compiler to store the associated values of each case in a separate heap allocation, so a `Tree` value is just a pointer in size. The `if case let` form matches a single pattern, a handy alternative to a `switch` when only one case is interesting.
+```
+app/ (7680 bytes)
+  Package.swift (512 bytes)
+  Sources/ (6144 bytes)
+    main.swift (2048 bytes)
+    Model.swift (4096 bytes)
+  README.md (1024 bytes)
+```
 
-Because the tree is a value, `inserting` returns a new tree rather than modifying the old one, sharing all the subtrees it didn't change. (This is a *persistent* data structure; it's elegant, but for a sort it's slower than an in-place structure built from classes. In real code, call `values.sort()`.)
-
-The struct type with no properties is called the *empty struct*, written `struct Empty {}`. It has size zero and carries no information but may be useful nonetheless. Swift's equivalent of Go's `struct{}` used as a set value or signal is usually the empty tuple `()`, also spelled `Void`, which is the return type of functions that don't return anything.
-
-### 4.4.1. Comparing Structs
-
-If all the properties of a struct are `Equatable`, the struct can be `Equatable` too, by declaring the conformance. The compiler synthesizes `==`, which compares the corresponding properties in order:
+Both `totalSize` and `printTree` follow the shape of the data: a `switch` handles each kind of node, and the directory case recurses into the children. Here, the array of children provides the indirection, since an array's elements are stored in a separate heap buffer. When a case holds a value of the enum's own type *directly*, as in a linked list, mark the enum `indirect`, and Swift will store that case's payload on the heap:
 
 ```swift
-struct Point: Equatable {
-    var x, y: Int
+indirect enum List<Element> {
+    case end
+    case node(Element, List<Element>)
 }
 
-let p = Point(x: 1, y: 2)
-let q = Point(x: 2, y: 1)
-print(p.x == q.x && p.y == q.y)  // "false"
-print(p == q)  // "false"
+let numbers = List.node(1, .node(2, .node(3, .end)))
 ```
 
-The same goes for `Hashable` and, for structs that should be encoded, `Codable` (Section 4.5). For `Comparable`, there's no single obvious ordering of properties, so the compiler synthesizes `<` only for enums without associated values, ordering the cases by declaration order; for structs, you write `<` yourself.
+A struct with no stored properties at all, `struct Empty {}`, is legal, occupies no space, and carries no information. Swift's usual "nothing" value, though, is the empty tuple `()`, also spelled `Void`, which is what functions without a result return.
 
-### 4.4.2. Composition and Forwarding
+### 4.4.2. Comparing Structs
 
-Go has a feature called *struct embedding* that lets one struct include another anonymously and access its fields as if they were its own. Swift has no direct equivalent. Instead, you compose structs by nesting them as ordinary named properties, and access the inner properties with a longer path:
+A struct whose stored properties are all `Equatable` can declare itself `Equatable`, and the compiler writes `==`, comparing the properties one by one:
 
 ```swift
-struct Point {
-    var x, y: Int
+struct GridPoint: Equatable {
+    var row, column: Int
 }
 
-struct Circle {
-    var center: Point
-    var radius: Int
-}
-
-struct Wheel {
-    var circle: Circle
-    var spokes: Int
-}
-
-var w = Wheel(circle: Circle(center: Point(x: 8, y: 8), radius: 5), spokes: 20)
-w.circle.center.x = 8
-w.circle.center.y = 8
-w.circle.radius = 5
-w.spokes = 20
+let a = GridPoint(row: 1, column: 2)
+let b = GridPoint(row: 2, column: 1)
+print(a == b)  // "false"
 ```
 
-When the forwarding matters (when you want `w.x` to mean `w.circle.center.x`), Swift offers *computed properties*, which look like stored properties but run code to get and set their value:
+`Hashable` and `Codable` (Section 4.5) are synthesized the same way. `Comparable` is synthesized only for enums whose cases have no associated values, which are ordered by declaration; for a struct, there's no single natural order of its properties, so you write `<` yourself.
+
+### 4.4.3. Composition and Forwarding
+
+Larger types are built by nesting smaller ones as properties:
 
 ```swift
-extension Wheel {
-    var x: Int {
-        get { circle.center.x }
-        set { circle.center.x = newValue }
+struct Address {
+    var street: String
+    var city: String
+    var postalCode: String
+}
+
+struct Customer {
+    var name: String
+    var address: Address
+}
+
+struct Order {
+    var id: Int
+    var customer: Customer
+    var total: Double
+}
+
+var order = Order(
+    id: 1042,
+    customer: Customer(
+        name: "Ada",
+        address: Address(street: "12 Analytical Way", city: "London", postalCode: "N1 9GU")),
+    total: 59.90)
+order.customer.address.city = "Cambridge"
+```
+
+Assignments through a chain of properties like `order.customer.address.city` modify the nested value in place. Composition is explicit: an `Order` *has* a `Customer`, and you reach the customer's properties through `order.customer`.
+
+When a particular nested property is used often, a *computed property* can provide a shortcut. It looks like a stored property to users but runs code to get and set its value:
+
+```swift
+extension Order {
+    var city: String {
+        get { customer.address.city }
+        set { customer.address.city = newValue }
     }
 }
 ```
 
-Writing these by hand for every property is tedious, and the more general tool is *dynamic member lookup* with *key paths*. A key path such as `\Circle.center` is a value that names a path to a property; a type marked `@dynamicMemberLookup` can forward any property access through a key path subscript:
+To forward *all* of a nested value's properties, rather than writing a computed property for each, Swift provides *dynamic member lookup*. A type marked `@dynamicMemberLookup` provides a subscript that receives a *key path* (a typed reference to a property, written like `\Customer.name`), and member accesses that the type doesn't recognize are routed through it:
 
 ```swift
 @dynamicMemberLookup
-struct Wheel {
-    var circle: Circle
-    var spokes: Int
+struct Order {
+    var id: Int
+    var customer: Customer
+    var total: Double
 
-    subscript<T>(dynamicMember keyPath: WritableKeyPath<Circle, T>) -> T {
-        get { circle[keyPath: keyPath] }
-        set { circle[keyPath: keyPath] = newValue }
+    subscript<T>(dynamicMember keyPath: WritableKeyPath<Customer, T>) -> T {
+        get { customer[keyPath: keyPath] }
+        set { customer[keyPath: keyPath] = newValue }
     }
 }
 
-var w = Wheel(circle: Circle(center: Point(x: 8, y: 8), radius: 5), spokes: 20)
-w.radius = 6  // means w.circle.radius = 6
-w.center.x += 1  // means w.circle.center.x += 1
-print(w.radius, w.center)  // "6 Point(x: 9, y: 8)"
+print(order.name)  // "Ada", meaning order.customer.name
+order.address.postalCode = "CB2 1TN"  // means order.customer.address.postalCode
 ```
 
-Despite the name, this is all checked at compile time: `w.radius` is accepted only because `\Circle.radius` is a valid writable key path, and its type is known statically. We'll revisit key paths in Section 6.4. For sharing *behavior* rather than data among types, Swift uses protocol extensions, which are the subject of Section 6.3.
+Despite the word "dynamic," this is checked entirely at compile time: `order.name` compiles only because `\Customer.name` is a valid key path, and its type is known. Section 6.4 returns to key paths, and Section 6.3 to sharing *behavior* between types, which Swift does with protocols.
 
-Notice the output of `print(w.center)`. When a struct doesn't provide its own `description`, `print` and string interpolation show its type name and its properties, a convenient default for debugging.
+### 4.4.4. Tuples
 
-### 4.4.3. Tuples
-
-A *tuple* groups several values without declaring a named type. Tuples are written in parentheses, and their elements may be accessed by position, `.0`, `.1`, and so on, or by label if the tuple has labels:
+A *tuple* groups values without declaring a type for them. Elements are accessed by position, `.0`, `.1`, and so on, or by name, if the tuple has labels:
 
 ```swift
-let http404 = (404, "Not Found")
-print(http404.0, http404.1)  // "404 Not Found"
+let status = (404, "Not Found")
+print(status.0, status.1)  // "404 Not Found"
 
-let response = (code: 200, message: "OK")
-print(response.code)  // "200"
+let range = (low: 9.8, high: 18.4)
+print(range.high - range.low)
 
-let (code, message) = response  // destructuring
+let (low, high) = range  // destructuring
 ```
 
-Tuples are ideal for returning several values from a function, as we'll see in Section 5.3, and for temporary groupings within a function. Tuples of up to six `Equatable` or `Comparable` elements can be compared with `==` and `<` (the comparison is lexicographic). But tuples can't conform to protocols or have methods, so once a grouping of values appears in more than one place or deserves a name, a struct is the better choice.
+Tuples are ideal for returning several values from a function (Section 5.3) and for short-lived groupings inside one. Tuples of up to six elements can be compared with `==` and `<`, element by element. But tuples can't have methods or conform to protocols, so once a group of values deserves a name, or appears in more than one place, make it a struct.
+
+**Exercise 4.12:** Write a function that, given a `FileNode`, returns the paths of the `n` largest files in the tree, such as `app/Sources/Model.swift`.
 
 ## 4.5. JSON
 
-JavaScript Object Notation (JSON) is a standard notation for sending and receiving structured information. JSON is not the only such notation. XML, ASN.1, and Google's Protocol Buffers serve similar purposes and each has its niche, but because of its simplicity, readability, and universal support, JSON is the most widely used.
-
-Swift has excellent support for encoding and decoding these formats, provided by the `Codable` system: the standard library protocols `Encodable` and `Decodable` (together, `Codable`), plus format-specific coders, such as Foundation's `JSONEncoder` and `JSONDecoder` and `PropertyListEncoder` and `PropertyListDecoder`. The protocols are format-neutral, so the same type declaration works with JSON, property lists, and third-party formats like YAML, MessagePack, or CBOR.
-
-JSON is an encoding of JavaScript values (strings, numbers, booleans, arrays, and objects) as Unicode text. It's an efficient yet readable representation for the basic data types of Chapter 3 and the composite types of this chapter (arrays, structs, and dictionaries).
-
-The basic JSON types are numbers (in decimal or scientific notation), booleans (`true` or `false`), and strings, which are sequences of Unicode code points enclosed in double quotes, with backslash escapes using a notation similar to Swift's, though JSON's `\uhhhh` numeric escapes denote UTF-16 codes, not Unicode scalars.
-
-These basic types may be combined recursively using JSON arrays and objects. A JSON array is an ordered sequence of values, written as a comma-separated list enclosed in square brackets; JSON arrays are used to encode Swift arrays. A JSON object is a mapping from strings to values, written as a sequence of `name:value` pairs separated by commas and surrounded by braces; JSON objects are used to encode Swift structs and dictionaries. For example:
+*JSON*, JavaScript Object Notation, is the most common format for exchanging structured data between programs, especially over the web. Its popularity comes from its simplicity: a JSON value is a number, a string, `true`, `false`, `null`, an *array* of values in square brackets, or an *object*, an unordered set of name-value pairs in braces. That's the whole language:
 
 ```
-boolean      true
-number       -273.15
-string       "She said \"Hello, 世界\""
-array        ["gold", "silver", "bronze"]
-object       {"year": 1980,
-              "event": "archery",
-              "medals": ["gold", "silver", "bronze"]}
+number     2.5
+string     "Grüße, \"world\""
+array      ["tea", "coffee", "cocoa"]
+object     {"title": "Dune", "year": 1965, "series": true}
 ```
 
-Consider an application that gathers movie reviews and offers recommendations. Its `Movie` data type and a typical list of values are declared below.
+These map naturally onto Swift: arrays onto arrays, objects onto structs or dictionaries, and the atoms onto numbers, strings, Booleans, and optionals.
+
+Swift's support for JSON, and for other formats, is built on two protocols, `Encodable` and `Decodable` (together, `Codable`). Foundation's `JSONEncoder` and `JSONDecoder` convert between `Codable` values and JSON text, and the same types work with `PropertyListEncoder` and with third-party encoders for YAML, CBOR, MessagePack, and others.
+
+Here's a small catalog of books:
 
 ```swift
-// swiftpl/ch4/movie
+// swiftpl/ch4/catalog
 import Foundation
 
-struct Movie: Codable {
+struct CatalogEntry: Codable {
     var title: String
+    var authors: [String]
     var year: Int
-    var color: Bool = false
-    var actors: [String]
+    var copies: Int = 1
 
     enum CodingKeys: String, CodingKey {
         case title
-        case year = "released"
-        case color
-        case actors
+        case authors
+        case year = "published"
+        case copies = "copies_owned"
     }
 }
 
-let movies = [
-    Movie(title: "Casablanca", year: 1942, color: false,
-          actors: ["Humphrey Bogart", "Ingrid Bergman"]),
-    Movie(title: "Cool Hand Luke", year: 1967, color: true,
-          actors: ["Paul Newman"]),
-    Movie(title: "Bullitt", year: 1968, color: true,
-          actors: ["Steve McQueen", "Jacqueline Bisset"]),
-    // ...
+let catalog = [
+    CatalogEntry(title: "The Mythical Man-Month", authors: ["Frederick P. Brooks Jr."], year: 1975,
+                 copies: 2),
+    CatalogEntry(title: "Structure and Interpretation of Computer Programs",
+                 authors: ["Harold Abelson", "Gerald Jay Sussman"], year: 1985),
+    CatalogEntry(title: "Hacker's Delight", authors: ["Henry S. Warren Jr."], year: 2002,
+                 copies: 3),
 ]
 ```
 
-Data structures like this are an excellent fit for JSON, and it's easy to convert in both directions. Converting a Swift data structure like `movies` to JSON is called *encoding* (or *marshaling*). Encoding is done by `JSONEncoder`:
+Converting Swift values to JSON is *encoding*:
 
 ```swift
 let encoder = JSONEncoder()
-do {
-    let data = try encoder.encode(movies)
-    print(String(decoding: data, as: UTF8.self))
-} catch {
-    fatalError("JSON encoding failed: \(error)")
-}
-```
-
-`encode` produces a `Data` value containing a very long string with no extraneous white space; we've folded the lines so it fits:
-
-```
-[{"title":"Casablanca","released":1942,"color":false,"actors":["Humphrey Bogart","Ingr
-id Bergman"]},{"title":"Cool Hand Luke","released":1967,"color":true,"actors":["Paul Ne
-wman"]},{"title":"Bullitt","released":1968,"color":true,"actors":["Steve McQueen","Jacq
-ueline Bisset"]}]
-```
-
-This compact representation contains all the information, but it's hard to read. For human consumption, set the encoder's `outputFormatting` option. Here we ask for pretty-printing with keys sorted so that the output is stable from run to run:
-
-```swift
 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+let data = try encoder.encode(catalog)
+print(String(decoding: data, as: UTF8.self))
 ```
-
-The output is now:
 
 ```
 [
   {
-    "actors" : [
-      "Humphrey Bogart",
-      "Ingrid Bergman"
+    "authors" : [
+      "Frederick P. Brooks Jr."
     ],
-    "color" : false,
-    "released" : 1942,
-    "title" : "Casablanca"
+    "copies_owned" : 2,
+    "published" : 1975,
+    "title" : "The Mythical Man-Month"
   },
   {
-    "actors" : [
-      "Paul Newman"
+    "authors" : [
+      "Harold Abelson",
+      "Gerald Jay Sussman"
     ],
-    "color" : true,
-    "released" : 1967,
-    "title" : "Cool Hand Luke"
+    ...
   },
   ...
 ]
 ```
 
-How did the encoder know what to produce? When a struct declares conformance to `Codable` and all its stored properties are themselves `Codable`, the compiler synthesizes the implementation: an `encode(to:)` method that writes each property, and an `init(from:)` initializer that reads each property back. The property names are used as JSON keys by default.
+Without `outputFormatting`, the encoder produces the most compact form, all on one line. `.prettyPrinted` adds line breaks and indentation for human readers, and `.sortedKeys` orders each object's keys, so that the output is the same on every run, which helps when JSON is stored in version control or compared in tests.
 
-To use a different name in JSON than in Swift, which is the job of a *field tag* in Go, declare a nested enum named `CodingKeys` conforming to `CodingKey`. Its cases name the properties that participate in coding, and their raw values give the JSON names. Here, `year` appears in JSON as `released`. A property omitted from `CodingKeys` is not encoded or decoded at all, which requires it to have a default value.
+How does `JSONEncoder` know what fields `CatalogEntry` has? It doesn't need to. When a struct declares `Codable` conformance and all its stored properties are `Codable` too, the *compiler* writes the code: an `encode(to:)` method that writes each property, and an `init(from:)` initializer that reads them back. By default, each property's name is used as its JSON key. To use different names, declare a nested enum called `CodingKeys` whose raw values are the JSON names, as above: `year` is written as `published`, and `copies` as `copies_owned`.
 
-What about Go's `omitempty`? The synthesized `Codable` conformance omits a property whose value is `nil` when encoding, and treats a missing key as `nil` when decoding, for any property of optional type. So "this field may be absent" is expressed in the type, as `String?` or `[String]?`, rather than in a tag.
+Optional properties get special treatment. Encoding leaves out a property whose value is `nil`, and decoding treats a missing key as `nil`. "This field may be absent" is thus expressed by the property's type.
 
-The inverse operation to encoding, decoding JSON and populating a Swift data structure, is done by `JSONDecoder`:
+*Decoding* goes the other way:
 
 ```swift
-let decoded = try JSONDecoder().decode([Movie].self, from: data)
-print(decoded.map(\.title))  // "["Casablanca", "Cool Hand Luke", "Bullitt"]"
+let decoded = try JSONDecoder().decode([CatalogEntry].self, from: data)
+print(decoded.map(\.title))
 ```
 
-The first argument says what type to decode, written as a *metatype*: `[Movie].self` is the type `[Movie]` used as a value. Decoding is strict. If a required key is missing or a value has the wrong type, `decode` throws a `DecodingError` that explains exactly which key, at which path, was wrong. Unknown keys in the input are ignored.
-
-By defining a suitable Swift data structure, we can select which parts of the JSON input to decode and which to discard. If we were interested only in the titles, we could declare a struct with just that property:
+The first argument says what to decode, written as a *metatype*: `[CatalogEntry].self` is the type `[CatalogEntry]` used as a value. Decoding checks everything. A missing key, a value of the wrong type, or malformed JSON makes `decode` throw a `DecodingError` that pinpoints the problem, down to the path of the offending field. Keys in the input that the type doesn't declare are ignored, which means you can declare a type with only the fields you care about and decode just those from a larger document:
 
 ```swift
-struct Title: Decodable {
+struct TitleOnly: Decodable {
     var title: String
 }
 
-let titles = try JSONDecoder().decode([Title].self, from: data)
-print(titles)
-// "[movie.Title(title: "Casablanca"), movie.Title(title: "Cool Hand Luke"), movie.Title(title: "Bullitt")]"
+let titles = try JSONDecoder().decode([TitleOnly].self, from: data)
 ```
 
-(When `print` shows the elements of a collection, it uses each element's *debug* description, which qualifies a struct's name with its module, here `movie`.)
+### 4.5.1. Example: A Weather Forecast
 
-Many web services provide a JSON interface: make a request with HTTP and back comes the desired information in JSON format. To illustrate, let's query the GitHub issue tracker using its web-service interface. First we'll define the necessary types, in a library module called `GitHub`:
+Many web services speak JSON over HTTP. To illustrate, we'll write a command-line weather forecast using Open-Meteo (`open-meteo.com`), a free forecast service that needs no account or API key. A request names a location by latitude and longitude, and the daily values wanted:
+
+```
+https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41
+    &daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto
+```
+
+The response (abridged) looks like this:
+
+```
+{
+  "latitude": 52.52,
+  "longitude": 13.419998,
+  "timezone": "Europe/Berlin",
+  "daily_units": { "temperature_2m_max": "°C", ... },
+  "daily": {
+    "time": ["2025-09-30", "2025-10-01", ...],
+    "temperature_2m_max": [18.4, 16.9, ...],
+    "temperature_2m_min": [9.8, 8.1, ...],
+    "precipitation_sum": [0.0, 2.3, ...]
+  }
+}
+```
+
+We'll put the client code in a library module, `Weather`, so that the examples in the next section can share it. First, types to match the response:
 
 ```swift
-// swiftpl/ch4/github/Sources/GitHub/GitHub.swift
-// Package GitHub provides a Swift API for the GitHub issue tracker.
-// See https://docs.github.com/en/rest/search/search#search-issues-and-pull-requests.
+// swiftpl/ch4/weather/Sources/Weather/Weather.swift
 import Foundation
 
-public let issuesURL = "https://api.github.com/search/issues"
-
-public struct IssuesSearchResult: Decodable, Sendable {
-    public var totalCount: Int
-    public var items: [Issue]
+public struct Forecast: Decodable, Sendable {
+    public var latitude: Double
+    public var longitude: Double
+    public var timezone: String
+    public var daily: Daily
 }
 
-public struct Issue: Decodable, Sendable {
-    public var number: Int
-    public var htmlUrl: String
-    public var title: String
-    public var state: String
-    public var user: User
-    public var createdAt: Date
-    public var body: String?  // in Markdown format
-}
-
-public struct User: Decodable, Sendable {
-    public var login: String
-    public var htmlUrl: String
+public struct Daily: Decodable, Sendable {
+    public var time: [String]  // ISO dates, like "2025-09-30"
+    public var temperature2mMax: [Double?]
+    public var temperature2mMin: [Double?]
+    public var precipitationSum: [Double?]
 }
 ```
 
-The GitHub API uses `snake_case` for its JSON keys, like `total_count` and `created_at`, while Swift convention calls for `camelCase`. Rather than writing `CodingKeys` for every type, we'll tell the decoder to convert all keys with its `keyDecodingStrategy` option. Likewise, dates in the GitHub API are ISO 8601 strings like `"2025-09-30T21:30:00Z"`, and the `dateDecodingStrategy` option tells the decoder to parse them into `Date` values.
+The service uses `snake_case` keys, while Swift uses `camelCase` names. Rather than writing `CodingKeys` for every property, we'll set the decoder's `keyDecodingStrategy` to `.convertFromSnakeCase`, which converts `temperature_2m_max` to `temperature2mMax` and `precipitation_sum` to `precipitationSum`. The `daily_units` object isn't declared, so it's skipped. The arrays of measurements have optional elements because the service reports `null` for any value it can't provide.
 
-The `searchIssues` function makes an HTTP request and decodes the result as JSON. Since the query terms presented by a user could contain characters like `?` and `&` that have special meaning in a URL, we build the URL with `URLComponents`, which escapes them correctly.
+The function that performs the request builds its URL with `URLComponents`, which takes care of escaping query parameters correctly, and checks the HTTP status before decoding:
 
 ```swift
-// swiftpl/ch4/github/Sources/GitHub/Search.swift
+// swiftpl/ch4/weather/Sources/Weather/Fetch.swift
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
 
-public enum SearchError: Error {
+public enum WeatherError: Error {
     case badStatus(Int)
 }
 
-/// Queries the GitHub issue tracker.
-public func searchIssues(_ terms: [String]) async throws -> IssuesSearchResult {
-    var components = URLComponents(string: issuesURL)!
-    components.queryItems = [URLQueryItem(name: "q", value: terms.joined(separator: " "))]
-    var request = URLRequest(url: components.url!)
-    request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-
-    let (data, response) = try await URLSession.shared.data(for: request)
+/// Fetches a daily forecast for the given location.
+public func fetchForecast(latitude: Double, longitude: Double) async throws -> Forecast {
+    var components = URLComponents(string: "https://api.open-meteo.com/v1/forecast")!
+    components.queryItems = [
+        URLQueryItem(name: "latitude", value: String(latitude)),
+        URLQueryItem(name: "longitude", value: String(longitude)),
+        URLQueryItem(name: "daily", value: "temperature_2m_max,temperature_2m_min,precipitation_sum"),
+        URLQueryItem(name: "timezone", value: "auto"),
+    ]
+    let (data, response) = try await URLSession.shared.data(from: components.url!)
     if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-        throw SearchError.badStatus(http.statusCode)
+        throw WeatherError.badStatus(http.statusCode)
     }
-
     let decoder = JSONDecoder()
     decoder.keyDecodingStrategy = .convertFromSnakeCase
-    decoder.dateDecodingStrategy = .iso8601
-    return try decoder.decode(IssuesSearchResult.self, from: data)
+    return try decoder.decode(Forecast.self, from: data)
 }
 ```
 
-`SearchError` is an enum conforming to the `Error` protocol, which makes its values throwable; the `badStatus` case carries the HTTP status code. Section 5.4 discusses errors in depth.
-
-The `issues` program prints a table of the issues matching its search terms:
+The command itself takes coordinates as arguments and prints a table:
 
 ```swift
-// swiftpl/ch4/github/Sources/issues/main.swift
-// Issues prints a table of GitHub issues matching the search terms.
-import GitHub
+// swiftpl/ch4/weather/Sources/forecast/main.swift
+// Forecast prints the daily weather forecast for a latitude and longitude.
+import Foundation
+import Weather
 
-let result = try await searchIssues(Array(CommandLine.arguments.dropFirst()))
-print("\(result.totalCount) issues:")
-for item in result.items {
-    let number = String(item.number).leftPadded(to: 5, with: " ")
-    let login = item.user.login.padding(to: 9)
-    print("#\(number) \(login) \(item.title.prefix(55))")
+let args = CommandLine.arguments
+guard args.count == 3, let lat = Double(args[1]), let lon = Double(args[2]) else {
+    print("usage: forecast LATITUDE LONGITUDE")
+    exit(2)
 }
 
-extension String {
-    func leftPadded(to width: Int, with pad: Character) -> String {
-        String(repeating: pad, count: max(0, width - count)) + self
-    }
-    func padding(to width: Int) -> String {
-        count >= width ? String(prefix(width)) : self + String(repeating: " ", count: width - count)
-    }
+let f = try await fetchForecast(latitude: lat, longitude: lon)
+print("Forecast for \(f.latitude), \(f.longitude) (\(f.timezone))")
+print("date          low    high   rain")
+for (i, day) in f.daily.time.enumerated() {
+    let values = String(format: "  %5.1f  %5.1f  %5.1f",
+                        f.daily.temperature2mMin[i] ?? .nan,
+                        f.daily.temperature2mMax[i] ?? .nan,
+                        f.daily.precipitationSum[i] ?? .nan)
+    print(day + values)
 }
 ```
 
-The command-line arguments specify the search terms. The command below queries the Swift project's issue tracker for open issues about JSON decoding:
-
 ```
-$ swift run issues repo:swiftlang/swift-foundation is:open json decoder
-13 issues:
-# 1234 someuser  JSONDecoder: improve error message for type mismatch
-# 1187 another   Decoding large integers loses precision
+$ swift run forecast 52.52 13.41
+Forecast for 52.52, 13.419998 (Europe/Berlin)
+date          low    high   rain
+2025-09-30    9.8   18.4    0.0
+2025-10-01    8.1   16.9    2.3
 ...
 ```
 
-(The issues you see will of course be different; GitHub's data changes daily, and the results above are illustrative.)
+(Forecasts change, of course; the figures are illustrative.) Missing values print as `nan`; the next section shows a better way.
 
-The GitHub web-service interface at `https://docs.github.com/en/rest` has many more features than we have space for here.
+**Exercise 4.13:** Add a `--days N` option to `forecast` (the API's `forecast_days` parameter), and print the week's average high and total rainfall at the end.
 
-**Exercise 4.12:** Modify `issues` to report the results in age categories, say less than a month old, less than a year old, and more than a year old.
+**Exercise 4.14:** Cache each response in a file named after the coordinates, and reuse it if it's less than an hour old, so that repeated runs don't hit the network.
 
-**Exercise 4.13:** Build a tool that lets users create, read, update, and close GitHub issues from the command line, invoking their preferred text editor when substantial text input is required.
-
-**Exercise 4.14:** The popular web comic *xkcd* has a JSON interface. For example, a request to `https://xkcd.com/571/info.0.json` produces a detailed description of comic 571, one of many favorites. Download each URL (once!) and build an offline index. Write a tool `xkcd` that, using this index, prints the URL and transcript of each comic that matches a search term provided on the command line.
-
-**Exercise 4.15:** The JSON-based web service of the Open Movie Database lets you search `https://omdbapi.com/` for a movie by name and download its poster image. Write a tool `poster` that downloads the poster image for the movie named on the command line.
+**Exercise 4.15:** Open-Meteo also offers a geocoding API that turns a place name into coordinates (`https://geocoding-api.open-meteo.com/v1/search?name=Berlin`). Let `forecast` accept a place name instead of coordinates.
 
 ## 4.6. Text Templates with String Interpolation
 
-The simplest kind of formatting, as in the `issues` program, is done by string interpolation. But sometimes formatting must be more elaborate, and it's desirable to separate the format from the code more completely. Go solves this with its `text/template` and `html/template` packages, which interpret a small template language at run time. Swift takes a different approach: its string interpolation is *extensible*, so templates are written as ordinary Swift code, checked by the compiler, using interpolations tailored to the job.
+String interpolation took care of all our formatting so far. For more elaborate output, many languages offer template engines: separate mini-languages, interpreted at run time, with placeholders for data. Swift takes a different route. Its string interpolation is *extensible*, so a "template" can be ordinary Swift code with custom interpolations, checked by the compiler like the rest of the program.
 
 ### 4.6.1. Custom Interpolations
 
-When the compiler sees a string literal with interpolations, like `"\(n) issues"`, it translates it into a series of calls on an *interpolation* object: `appendLiteral(_:)` for each literal segment and `appendInterpolation(...)` for each `\(...)` segment, passing the contents of the parentheses as the arguments. For ordinary strings, the interpolation type is `DefaultStringInterpolation`. Since `appendInterpolation` is just a method, we can add overloads to it in an extension, with any argument labels we like.
+When Swift compiles a string literal containing interpolations, it builds the string by calling methods on an *interpolation* value: `appendLiteral(_:)` for each piece of literal text, and `appendInterpolation(...)` for each `\(...)`, passing whatever is inside the parentheses as arguments. For ordinary strings, the interpolation type is `DefaultStringInterpolation`, and because `appendInterpolation` is just a method, we can add overloads to it in an extension, including ones with argument labels.
 
-Here's an interpolation that prints how many days ago a date was:
+Here are two interpolations for the forecast: one that formats a temperature, or a dash if it's missing, and one that draws a horizontal bar whose length represents a number:
 
 ```swift
-// swiftpl/ch4/issuesreport
+// swiftpl/ch4/weather/Sources/forecast2/Interpolations.swift
 import Foundation
 
 extension DefaultStringInterpolation {
-    mutating func appendInterpolation(daysAgo date: Date) {
-        let days = Int(Date.now.timeIntervalSince(date) / (24 * 60 * 60))
-        appendLiteral(String(days))
+    /// Interpolates an optional temperature with one decimal place, right-aligned.
+    mutating func appendInterpolation(temp value: Double?) {
+        appendLiteral(value.map { String(format: "%5.1f", $0) } ?? "    –")
+    }
+
+    /// Interpolates a bar of block characters whose length is value × scale.
+    mutating func appendInterpolation(bar value: Double, scale: Double = 1) {
+        let length = max(0, Int((value * scale).rounded()))
+        appendLiteral(String(repeating: "█", count: length))
     }
 }
 ```
 
-and here's a report on GitHub issues that uses it:
+With these, the report reads almost like a template, but every value has its real type:
 
 ```swift
-// swiftpl/ch4/issuesreport
-import GitHub
+// swiftpl/ch4/weather/Sources/forecast2/main.swift
+import Weather
 
-func report(_ result: IssuesSearchResult) -> String {
-    var out = "\(result.totalCount) issues:\n"
-    for item in result.items {
-        out += """
-            ----------------------------------------
-            Number: \(item.number)
-            User:   \(item.user.login)
-            Title:  \(item.title.prefix(64))
-            Age:    \(daysAgo: item.createdAt) days
-
-            """
+func report(_ f: Forecast) -> String {
+    var out = "Forecast for \(f.latitude), \(f.longitude) (\(f.timezone))\n"
+    for (i, day) in f.daily.time.enumerated() {
+        let low = f.daily.temperature2mMin[i]
+        let high = f.daily.temperature2mMax[i]
+        out += "\(day) \(temp: low) \(temp: high)  \(bar: high ?? 0, scale: 0.5)\n"
     }
     return out
 }
 
-let result = try await searchIssues(Array(CommandLine.arguments.dropFirst()))
-print(report(result))
+let f = try await fetchForecast(latitude: 52.52, longitude: 13.41)
+print(report(f))
 ```
 
-Compared with a run-time template language, this approach has a number of advantages: typos in property names are compile-time errors, every value has its proper type (`createdAt` is a `Date`, not a string), and the "template" can use any Swift code, such as loops, conditionals, and function calls, with no new syntax to learn. The price is that the template can't be changed without recompiling, which is rarely a problem in practice.
-
-The output looks like this:
-
 ```
-$ swift run issuesreport repo:swiftlang/swift-foundation is:open json decoder
-13 issues:
-----------------------------------------
-Number: 1234
-User:   someuser
-Title:  JSONDecoder: improve error message for type mismatch
-Age:    41 days
-----------------------------------------
+Forecast for 52.52, 13.419998 (Europe/Berlin)
+2025-09-30   9.8  18.4  █████████
+2025-10-01   8.1  16.9  ████████
 ...
 ```
 
+Compared with a separate template language, this approach catches mistakes at compile time, whether a misspelled property or a `Double?` passed where a `String` was expected. It gives templates the full power of Swift, with loops, conditionals, and function calls, and adds no new syntax to learn. The one thing it gives up is changing templates without recompiling, which programs rarely need.
+
 ### 4.6.2. HTML with Automatic Escaping
 
-Now let's generate HTML. HTML introduces a hazard that plain text doesn't: any text taken from outside the program, such as an issue title, might contain characters like `<` and `&` that have special meaning in HTML, either by accident or maliciously. Inserting it into a page without escaping is a classic security vulnerability, an *injection attack*. Go's `html/template` package escapes such text automatically.
+Generating HTML raises a danger that plain text doesn't. Text from outside the program, such as a user's input, a database field, or a response from a web service, might contain `<`, `&`, or quotation marks. Insert it into a page unescaped, and a stray character breaks the layout; worse, a malicious one injects markup or script into the page. *Cross-site scripting*, as this attack is known, has been one of the most common security vulnerabilities on the web for decades.
 
-We can get the same guarantee in Swift with a custom type that is created from a string literal, whose interpolation escapes everything except values that are already known to be HTML:
+The reliable defense is to escape *everything* that comes from outside, automatically, and to require an explicit decision to insert raw markup. We can make the type system enforce that with a type, `HTML`, for markup that's already safe. String literals in our own source code are trusted. Interpolated values are escaped, unless they're themselves `HTML`:
 
 ```swift
-// swiftpl/ch4/issueshtml
+// swiftpl/ch4/weather/Sources/forecastpage/HTML.swift
 /// HTML is a fragment of trusted HTML markup.
 struct HTML: ExpressibleByStringInterpolation, CustomStringConvertible {
     let description: String
@@ -1052,52 +970,39 @@ func escape(_ s: String) -> String {
 }
 ```
 
-A type conforms to `ExpressibleByStringInterpolation` by providing an initializer that takes a finished interpolation, and the associated `Interpolation` type does the work. The literal parts of the string, which were written by the programmer, are copied verbatim. Every interpolated value is converted to a string and escaped, *unless* it is itself an `HTML` value, in which case the more specific overload is chosen and the value is inserted as is. This is what makes nesting work: a row built as `HTML` can be interpolated into a table without being escaped twice.
+A type conforms to `ExpressibleByStringInterpolation` by declaring an `Interpolation` type and an initializer that takes a finished one. Literal text from the program's source is appended as is. Any interpolated value that's `CustomStringConvertible` is converted to text and escaped. An interpolated `HTML` value matches the more specific overload, and is inserted unescaped, since it's markup we've already vouched for. That's what allows HTML fragments to be built separately and assembled without double escaping.
 
-With this type, the issue list becomes:
+Here's a forecast page, which includes a place name given by the user:
 
 ```swift
-func issueList(_ result: IssuesSearchResult) -> HTML {
+func forecastPage(place: String, _ f: Forecast) -> HTML {
     var rows = ""
-    for item in result.items {
-        let row: HTML = """
-            <tr>
-              <td><a href='\(item.htmlUrl)'>\(item.number)</a></td>
-              <td>\(item.state)</td>
-              <td><a href='\(item.user.htmlUrl)'>\(item.user.login)</a></td>
-              <td><a href='\(item.htmlUrl)'>\(item.title)</a></td>
-            </tr>
-
-            """
+    for (i, day) in f.daily.time.enumerated() {
+        let low = f.daily.temperature2mMin[i].map { String($0) } ?? "–"
+        let high = f.daily.temperature2mMax[i].map { String($0) } ?? "–"
+        let row: HTML = "<tr><td>\(day)</td><td>\(low)</td><td>\(high)</td></tr>\n"
         rows += row.description
     }
     return """
-        <h1>\(result.totalCount) issues</h1>
+        <h1>Forecast for \(place)</h1>
         <table>
-        <tr style='text-align: left'>
-          <th>#</th><th>State</th><th>User</th><th>Title</th>
-        </tr>
+        <tr><th>Date</th><th>Low</th><th>High</th></tr>
         \(HTML(stringLiteral: rows))
         </table>
         """
 }
-
-let result = try await searchIssues(Array(CommandLine.arguments.dropFirst()))
-print(issueList(result))
 ```
 
-The `HTML(stringLiteral: rows)` conversion is the one place where we tell the type system "trust this string," and it's safe here because every row was itself built as `HTML`. (A more careful design would keep the rows as `[HTML]` and give `HTML` a `joined()` method, so that no raw string ever needs to be trusted; that's Exercise 4.17.)
-
-If an issue's title were `<script>alert('pwned')</script>`, the page would display that text literally:
+Suppose a mischievous user asks for the forecast for `<script>alert('hi')</script>`. The page shows that text, harmlessly, as text:
 
 ```html
-<td><a href='...'>&lt;script&gt;alert(&#39;pwned&#39;)&lt;/script&gt;</a></td>
+<h1>Forecast for &lt;script&gt;alert(&#39;hi&#39;)&lt;/script&gt;</h1>
 ```
 
-The compiler chooses the escaping or non-escaping overload based on the static type of each interpolated value, so there's no way to forget to escape a `String`: you can only avoid escaping by explicitly constructing an `HTML`, which is easy to find and review. This pattern, using the type system to distinguish trusted from untrusted strings, is a powerful one, and it applies equally to SQL queries, shell commands, and log messages.
+The overload is chosen by each value's *static* type, so no value of type `String` can reach the page unescaped, no matter how a future change alters the code. The only way to insert raw text is to construct an `HTML` value from it explicitly, as `forecastPage` does once, for rows it built itself as `HTML`. Such constructions are easy to search for and review. (Exercise 4.17 removes even that one.) The same idea, using distinct types for trusted and untrusted text, protects SQL queries, shell commands, and file paths.
 
-For larger sites, Swift packages such as Elementary, Plot, and Leaf provide complete type-safe HTML DSLs or traditional template engines.
+For full web applications, packages such as Elementary and Plot provide complete type-safe HTML DSLs, and Leaf provides a traditional template engine.
 
-**Exercise 4.16:** Create a web server that queries GitHub once and then allows navigation of the list of bug reports, milestones, and users.
+**Exercise 4.16:** Serve `forecastPage` from a Hummingbird server (Section 1.7), taking the place name and coordinates from query parameters, as in `/forecast?place=Berlin&lat=52.52&lon=13.41`.
 
-**Exercise 4.17:** Add a static method `HTML.joined(_ fragments: [HTML]) -> HTML` and use it to eliminate `HTML(stringLiteral:)` from `issueList`. Then make `init(stringLiteral:)` impossible to call with a non-literal string. (Hint: does it need to be? Consider what `ExpressibleByStringLiteral` requires.)
+**Exercise 4.17:** Add a static method `HTML.joined(_ fragments: [HTML]) -> HTML`, and use it to remove the `HTML(stringLiteral:)` call from `forecastPage` by keeping the rows as `[HTML]`. Could `init(stringLiteral:)` be restricted so that it can't be called with a variable at all?
