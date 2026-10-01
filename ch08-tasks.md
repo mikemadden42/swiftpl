@@ -566,6 +566,7 @@ The link checker of Section 5.6 visited one page at a time, and so spent nearly 
 
 ```swift
 // swiftpl/ch8/crawl1
+import Foundation
 import Links
 
 func crawl(_ url: String) async -> [String] {
@@ -576,6 +577,10 @@ func crawl(_ url: String) async -> [String] {
         printError("\(error)")
         return []
     }
+}
+
+func printError(_ message: String) {
+    FileHandle.standardError.write(Data((message + "\n").utf8))
 }
 ```
 
@@ -775,6 +780,10 @@ func walkDir(_ dir: URL) -> Usage {
         }
     }
     return usage
+}
+
+func printError(_ message: String) {
+    FileHandle.standardError.write(Data((message + "\n").utf8))
 }
 ```
 

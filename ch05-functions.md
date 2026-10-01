@@ -239,6 +239,10 @@ for url in CommandLine.arguments.dropFirst() {
         printError("summary: \(url): \(error)")
     }
 }
+
+func printError(_ message: String) {
+    FileHandle.standardError.write(Data((message + "\n").utf8))
+}
 ```
 
 The result type `(title: String, headings: Int, links: Int)` is a tuple with labeled elements, so callers can write `s.title` instead of `s.0`, or unpack the whole thing:
@@ -734,6 +738,10 @@ func status(of link: String) async -> Int {
     request.httpMethod = "HEAD"  // we need only the status, not the body
     guard let result = try? await URLSession.shared.data(for: request) else { return 0 }
     return (result.1 as? HTTPURLResponse)?.statusCode ?? 0
+}
+
+func printError(_ message: String) {
+    FileHandle.standardError.write(Data((message + "\n").utf8))
 }
 ```
 

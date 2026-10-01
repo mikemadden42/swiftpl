@@ -348,6 +348,15 @@ $ .build/debug/download https://www.swift.org > page.html
 https://www.swift.org: status 200, 21342 bytes
 ```
 
+Later examples use `download` as an ordinary command, running it as `download` rather than `.build/debug/download`, often in pipelines with other programs. To make that work, build an optimized copy and put it in a directory on your shell's `PATH`:
+
+```
+$ swift build -c release
+$ mkdir -p ~/bin && cp .build/release/download ~/bin/   # ~/bin must be on your PATH
+```
+
+(SwiftPM can also do the copying: `swift package experimental-install` installs a package's executables in `~/.swiftpm/bin`, which you can add to your `PATH`.)
+
 On Apple platforms, `URLSession` is part of Foundation. On Linux and Windows it lives in a separate module, `FoundationNetworking`, so that programs that don't use the network don't pay for it. The `#if canImport(...)` directive is *conditional compilation*: the `import` it encloses is compiled only where the module exists. You'll see this at the top of most portable Swift networking code.
 
 `guard` is a statement for checking preconditions. It requires its condition to be true for execution to continue past it; otherwise the `else` block runs, and that block must leave the current scope, here by calling `exit` to end the program. With `let`, as here, `guard` unwraps an optional and makes the value available for the rest of the scope. `URL(string:)` returns `nil` for text that isn't a valid URL, so `url` has type `URL?` until the guard unwraps it to a `URL`.
