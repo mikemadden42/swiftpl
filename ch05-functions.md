@@ -164,7 +164,7 @@ $ download https://example.com/guide.html | toc
 The next function asks a different question: what's the most deeply nested element in a document, and what's the path to it? It's a quick way to spot a page whose structure has gotten out of hand:
 
 ```swift
-// swiftpl/ch5/deepest
+// swiftpl/ch5/deepest (builds on toc)
 /// Returns the tag names along the longest path from n down to a leaf element.
 func deepestPath(from n: Node, _ path: [String] = []) -> [String] {
     var path = path
@@ -181,6 +181,7 @@ func deepestPath(from n: Node, _ path: [String] = []) -> [String] {
     return best
 }
 
+// In toc's do block, after the document is parsed:
 print(deepestPath(from: doc).joined(separator: " > "))
 // e.g. "#root > html > body > div > main > section > ul > li > a > span"
 ```
@@ -317,6 +318,11 @@ Since error messages are often chained like this, they read best when each part 
 
 ```swift
 // swiftpl/ch5/retry
+import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 /// Calls operation up to `attempts` times, doubling the delay after each failure.
 /// Throws the last error if every attempt fails.
 func withRetries<T>(
@@ -336,9 +342,11 @@ func withRetries<T>(
     fatalError("unreachable")
 }
 
+let statusURL = URL(string: "https://www.swift.org")!
 let data = try await withRetries {
     try await URLSession.shared.data(from: statusURL).0
 }
+print("received \(data.count) bytes")
 ```
 
 The loop runs over the unbounded range `1...`. A `catch` clause can have a `where` condition: while attempts remain, failures are caught, reported, and retried after a delay that doubles each time (*exponential backoff*, which keeps a struggling server from being hammered). On the last attempt the condition is false, nothing catches the error, and it propagates out of `withRetries`. The final `fatalError` is never reached; it satisfies the compiler that the function can't fall off its end. `Task.sleep` suspends without blocking a thread, and throws if the task is cancelled (Section 8.9). Retry only failures that might be transient; there's no point retrying an invalid URL.
@@ -464,7 +472,7 @@ print(String(secret.map(rot13)))  // "Hello, Swift!"
 Function values also let us separate *how* a structure is traversed from *what's done* at each node. Here's a general traversal for HTML trees that calls a function for every node, telling it how deep the node is:
 
 ```swift
-// swiftpl/ch5/walk
+// swiftpl/ch5/walk (builds on toc)
 /// Calls visit for each node in the tree rooted at n, in document order,
 /// along with the node's depth below n.
 func walk(_ n: Node, depth: Int = 0, _ visit: (Node, Int) -> Void) {
@@ -475,7 +483,7 @@ func walk(_ n: Node, depth: Int = 0, _ visit: (Node, Int) -> Void) {
 }
 ```
 
-Now each question about a document needs only the code that's specific to it. Counting how often each tag is used:
+Now each question about a document needs only the code that's specific to it. (The calls below go in `toc`'s `do` block, where the parsed document `doc` is in scope.) Counting how often each tag is used:
 
 ```swift
 var tagCounts: [String: Int] = [:]

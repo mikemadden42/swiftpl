@@ -4,7 +4,7 @@
 
 The chapters follow the same overall plan as the Go book, a tutorial, then the language from the ground up, then concurrency, packages, testing, reflection, and low-level programming, but the text, examples, and exercises are original and written for Swift. Where the two languages differ, chapters cover the Swift way of solving the same problem: structured concurrency and asynchronous sequences rather than channels, copy-on-write collections rather than slices, protocol extensions rather than struct embedding.
 
-Example programs carry a label such as `swiftpl/ch1/hello`, which names the package directory where you would keep the code. Unless the text says otherwise, each is the `main.swift` of an executable package.
+Example programs carry a label such as `swiftpl/ch1/hello`, which names the package directory where you would keep the code. Unless the text says otherwise, each is the `main.swift` of an executable package. A label ending in `(continued)` adds to the package of the previous example with the same label, and one ending in `(builds on NAME)` revises the earlier program `NAME`: start from a copy of that package.
 
 ## Contents
 

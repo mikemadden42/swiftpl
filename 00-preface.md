@@ -54,7 +54,7 @@ The rest of the book focuses on the areas where Swift is most distinctive. **Cha
 
 Most sections end with exercises, which range from small variations on the examples to substantial programs of your own.
 
-Example programs are labeled with the name of the package they belong in, such as `swiftpl/ch1/hello`. To try one, create an executable package with that name and replace its `main.swift` with the example's code (examples that use `@main` go in a file named after their type instead, as Section 2.3.2 explains):
+Example programs are labeled with the name of the package they belong in, such as `swiftpl/ch1/hello`. To try one, create an executable package with that name and replace its `main.swift` with the example's code (examples that use `@main` go in a file named after their type instead, as Section 2.3.2 explains). Two annotations on labels mark programs that aren't complete on their own. `(continued)` means the code belongs in the same package as the previous example with that label. `(builds on clock1)` means the program is a revision of an earlier one: start from a copy of that package, and change or add what the example shows. Libraries and dependencies on other packages are described in the text where they're needed:
 
 ```
 $ mkdir hello && cd hello

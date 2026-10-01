@@ -189,7 +189,7 @@ Now try connecting a second `nc` from another terminal while the first is still 
 The fix is to stop waiting. Instead of calling `handle` directly, the accept loop hands each connection to a new child task. Since the children don't produce values anyone needs, we use a *discarding* task group, which forgets each child as soon as it completes rather than holding its result:
 
 ```swift
-// swiftpl/ch8/clock2
+// swiftpl/ch8/clock2 (builds on clock1)
 try await withThrowingDiscardingTaskGroup { group in
     try await server.executeThenClose { connections in
         for try await connection in connections {
@@ -277,7 +277,7 @@ The second request was typed right after the first, yet the server didn't even a
 The cure is the same as before, one level down: give each request its own child task.
 
 ```swift
-// swiftpl/ch8/remind2
+// swiftpl/ch8/remind2 (builds on remind1)
 func handle(_ connection: NIOAsyncChannel<ByteBuffer, ByteBuffer>) async throws {
     try await connection.executeThenClose { inbound, outbound in
         try await withThrowingDiscardingTaskGroup { group in
@@ -378,7 +378,7 @@ generate --numbers--> filter --primes--> report
 The first stage emits the integers from 2 to 50, the second passes along only the primes, and the third prints what reaches it:
 
 ```swift
-// swiftpl/ch8/pipeline1
+// swiftpl/ch8/pipeline1 (builds on primes, for isPrime)
 let (numbers, numbersIn) = AsyncStream.makeStream(of: Int.self)
 let (primes, primesIn) = AsyncStream.makeStream(of: Int.self)
 
@@ -412,7 +412,7 @@ Shutdown flows through the pipeline from front to back. The generator finishes i
 As pipelines grow, it's clearer to make each stage a function and pass it only the ends it needs:
 
 ```swift
-// swiftpl/ch8/pipeline2
+// swiftpl/ch8/pipeline2 (builds on primes, for isPrime)
 func generate(_ range: ClosedRange<Int>, into out: AsyncStream<Int>.Continuation) {
     for n in range {
         out.yield(n)
@@ -810,7 +810,7 @@ On a large home directory, this sequential version can run for many seconds befo
 The subdirectories of any directory can be measured independently, so the recursion itself can fan out. Each call to `walkDir` becomes the root of a small task group, with one child per subdirectory:
 
 ```swift
-// swiftpl/ch8/dirsize2
+// swiftpl/ch8/dirsize2 (builds on dirsize1)
 func walkDir(_ dir: URL) async -> Usage {
     await withTaskGroup(of: Usage.self) { group in
         var usage = Usage()
@@ -837,7 +837,7 @@ The shape of the code mirrors the shape of the data. Files are counted on the sp
 A long-running tool should show signs of life. Let's add an optional `-v` flag that prints running totals twice a second. The design is the event loop of Section 8.7 again: the walker produces an event per file, a clock produces ticks, and a single loop consumes both.
 
 ```swift
-// swiftpl/ch8/dirsize3
+// swiftpl/ch8/dirsize3 (builds on dirsize1)
 enum Event: Sendable {
     case file(bytes: Int)
     case tick
@@ -921,7 +921,7 @@ Why make it cooperative? Because stopping a task at an arbitrary instruction is 
 Let's make `dirsize` stoppable from the keyboard: pressing Return should end the walk promptly and print whatever has been counted so far. The walk runs in a task, and a dedicated thread waits for input and cancels it:
 
 ```swift
-// swiftpl/ch8/dirsize4
+// swiftpl/ch8/dirsize4 (builds on dirsize2)
 let walk = Task {
     var total = Usage()
     for root in roots {

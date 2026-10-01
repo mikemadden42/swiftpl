@@ -355,6 +355,17 @@ Usage: pace [--distance <distance>] --time <time>
 
 Note `@retroactive` on both extensions: neither the types nor the protocol belong to this module.
 
+The `pace` package depends on two others: `swift-argument-parser`, as in Section 2.3.2, and the `Distance` package from Section 2.6, which can be referenced by its location on disk. Its manifest's dependencies are:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
+    .package(path: "../distance"),
+],
+```
+
+and its target depends on the products `ArgumentParser` and `Distance`.
+
 **Exercise 7.5:** Extend the `Duration` parser to accept compound durations like `1h20m` and `3m30s`.
 
 **Exercise 7.6:** `ExpressibleByArgument` has another requirement, `static var allValueStrings: [String]`, with a default of `[]`. Find out what it's for, and use it to make an option that accepts the name of a `Suit` (Section 3.6). Is there an easier way for a `CaseIterable` enum?
@@ -807,7 +818,7 @@ A literal is its own value, and a variable is looked up in the environment. An o
 Some expressions can't be evaluated: those with an unknown function, a function called with the wrong number of arguments, or an operator outside the language. `eval` traps on them, on the assumption that they'll have been rejected earlier. We'll write a checking pass for that shortly. First we need a parser, to turn text into `Expr` values. Here's a compact recursive-descent parser, with a lexer that splits the text into tokens:
 
 ```swift
-// swiftpl/ch7/eval
+// swiftpl/ch7/eval (continued)
 struct SyntaxError: Error, CustomStringConvertible {
     var description: String
 }
@@ -995,10 +1006,10 @@ extension Expr {
 
 Separating checking from evaluation means an expression can be validated once and then evaluated any number of times, with different environments, knowing that `eval` won't trap.
 
-Now the calculator. It reads lines from the standard input. A line of the form `name = expression` defines a variable; any other line is an expression to evaluate:
+Now the calculator. For now, put it in the same package as the evaluator, as the `main.swift` of a single executable; Section 10.3 shows how the evaluator becomes a library module, `Eval`, with `calc` as a separate executable that imports it. (The evaluator's declarations would then need to be `public`.) The calculator reads lines from the standard input. A line of the form `name = expression` defines a variable; any other line is an expression to evaluate:
 
 ```swift
-// swiftpl/ch7/calc
+// swiftpl/ch7/calc (builds on eval)
 // Calc evaluates expressions read from standard input.
 // A line "name = expression" defines a variable for later lines to use.
 import Foundation
@@ -1235,6 +1246,7 @@ Protocols get used in two quite different styles. In the first, illustrated by `
 Suppose we need to write values of a few basic types as JSON literals:
 
 ```swift
+// swiftpl/ch7/json
 func jsonLiteral(_ x: Any?) -> String {
     switch x {
     case nil:
@@ -1266,7 +1278,7 @@ Each `case let x as T` matches values whose dynamic type is `T`, binding them as
 This works, but Swift has a better tool for a closed set of alternatives: an enum. JSON's values are exactly null, Booleans, numbers, strings, arrays, and objects, so they can be modeled precisely:
 
 ```swift
-// swiftpl/ch7/json
+// swiftpl/ch7/json (continued)
 enum JSONValue {
     case null
     case bool(Bool)

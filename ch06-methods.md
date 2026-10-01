@@ -237,7 +237,7 @@ Building a bigger type out of smaller ones is called *composition*, and Swift of
 The simplest is to store the smaller value as a property and reach its methods through the property. A note attached to a stretch of a recording, say, has an interval and some text:
 
 ```swift
-// swiftpl/ch6/annotation
+// swiftpl/ch6/annotation (builds on interval)
 struct Annotation {
     var span: Interval
     var note: String
