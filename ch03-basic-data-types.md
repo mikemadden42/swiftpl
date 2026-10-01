@@ -749,7 +749,7 @@ print(Priority.allCases.map(\.rawValue))  // "[1, 2, 3, 4]"
 
 Creating a case from a raw value can fail, since not every number is a priority, so `init(rawValue:)` returns an optional. Conforming to `CaseIterable` makes the compiler provide `allCases`, every case in declaration order.
 
-Enumerations can do much more: cases can carry associated values of their own (Section 1.8), and enums can have methods and conform to protocols. They'll appear throughout the rest of the book.
+Enumerations can do much more: cases can carry associated values of their own, and enums can have methods and conform to protocols. Section 4.7 covers these *algebraic data types* in depth, and Section 4.9 the pattern matching that takes them apart.
 
 ### 3.6.3. Option Sets
 

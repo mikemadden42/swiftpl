@@ -712,6 +712,50 @@ Existentials *erase* type information, and that's exactly what's needed when val
 
 In practice, most Swift code uses concrete types most of the time, generics when writing algorithms that apply to many types, and existentials at the points where values of varying types genuinely meet, of which `any Error` is the most common.
 
+### 7.7.5. Parameter Packs
+
+Ordinary generics abstract over *types*, but always over a fixed number of them: `largest<T>` has one type parameter, `Dictionary<Key, Value>` two. Some APIs need to work with any number of values, each of a possibly different type. Before Swift 5.9, the only way to write such an API was to write it many times, once for each arity, which is why the standard library's tuple comparison operators stop at six elements. *Parameter packs* (Swift 5.9) remove the limit.
+
+A *type parameter pack* is declared with `each`, and it stands for any number of types. A *value parameter pack* uses those types, and `repeat` expands an expression once for each element of the pack:
+
+```swift
+// swiftpl/ch7/packs
+/// Returns the description of each argument, whatever their number and types.
+func describeAll<each T: CustomStringConvertible>(_ values: repeat each T) -> [String] {
+    var result: [String] = []
+    for value in repeat each values {  // iterate over the pack (Swift 6.0)
+        result.append(value.description)
+    }
+    return result
+}
+
+print(describeAll(1, "two", 3.0, true))  // "["1", "two", "3.0", "true"]"
+```
+
+`each T` declares a pack of types, each of which must conform to `CustomStringConvertible`, and `repeat each T` in the parameter list means "one parameter for each type in the pack." The call above binds the pack to `Int, String, Double, Bool`. Inside the function, `for value in repeat each values` visits each element in turn.
+
+Packs can be expanded in tuples, too, which makes it possible to write functions over tuples of any length. Here's equality for tuples of any arity, which removes the standard library's limit of six:
+
+```swift
+// swiftpl/ch7/packs (continued)
+func tuplesEqual<each Element: Equatable>(
+    _ lhs: (repeat each Element), _ rhs: (repeat each Element)
+) -> Bool {
+    for (left, right) in repeat (each lhs, each rhs) {
+        guard left == right else { return false }
+    }
+    return true
+}
+
+let a = (1, "a", true, 2.5, "x", 7, 8)
+print(tuplesEqual(a, (1, "a", true, 2.5, "x", 7, 8)))  // "true": seven elements
+print(tuplesEqual(a, (1, "a", true, 2.5, "x", 7, 9)))  // "false"
+```
+
+Using `each Element` in both parameters requires the two tuples to have the same *shape*: the same number of elements, with matching types. `repeat (each lhs, each rhs)` pairs the elements up, and the loop compares each pair, every comparison using the `==` of that element's own type.
+
+Parameter packs are an advanced feature, more often encountered in library APIs than written in application code. SwiftUI's view builders, which accept any number of child views of different types, are built on them, for instance. When an API seems to accept "any number of values of any types" with full type checking, packs are usually how it's done.
+
 **Exercise 7.10:** Write a generic `isPalindrome` that accepts any `BidirectionalCollection` with `Equatable` elements, and test it on arrays, strings, and a string's `utf8` view.
 
 **Exercise 7.11:** Make the `RingBuffer` from Section 6.5 conform to `Sequence`, with an iterator that yields the elements from oldest to newest. Which methods does it gain?

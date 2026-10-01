@@ -332,7 +332,7 @@ for s in shapes {
 // square with area 9.0
 ```
 
-`override` is mandatory, so a method can't override another by accident, and a subclass's initializer must set its own properties and then call `super.init` to set the inherited ones. Swift's full rules for class initialization (designated and convenience initializers, required initializers, two-phase initialization) are considerably more intricate than this example suggests, which is one reason everyday Swift favors structs and protocols.
+`override` is mandatory, so a method can't override another by accident, and a subclass's initializer must set its own properties and then call `super.init` to set the inherited ones. Swift's full rules for class initialization (designated and convenience initializers, required initializers, two-phase initialization) are more intricate than this example suggests; Section 6.7 covers them.
 
 Inheritance is the right tool for a genuine "is-a" hierarchy whose members share both data and behavior, and for working with frameworks designed around subclassing. For sharing behavior among types in general, protocols with extensions provide the same reuse with less coupling, and they work for structs and enums too.
 
@@ -543,3 +543,310 @@ For code in libraries, there's a further consideration: anything `public` is a p
 **Exercise 6.5:** Change `Interval` so that `lower <= upper` always holds: make the bounds `private(set)`, add a failable initializer that rejects reversed bounds, and adjust `shift(by:)` and the extensions accordingly. Which earlier examples still compile?
 
 **Exercise 6.6:** Write a `BankBalance` type that stores its value as an integer number of cents, can be read as a `Decimal`, and can be changed only by `deposit(_:)` and `withdraw(_:) throws`, which refuses withdrawals that would make the balance negative.
+
+## 6.7. Classes and Inheritance
+
+Most of this chapter has been about structs, because most Swift types are structs. But classes, and the inheritance they support, are a full part of the language, and some problems call for them: modeling things with identity, sharing a resource that must be released exactly once, and using frameworks built around subclassing. Section 6.3.3 gave a short example. This section covers the rules properly.
+
+### 6.7.1. A Class Hierarchy
+
+Inheritance works best when a base class defines the overall shape of an operation and subclasses fill in the details, a design known as the *template method* pattern. As an example, here's a small family of document exporters. The base class fixes the order in which a document is produced (header, paragraphs, footer), and subclasses decide what each part looks like:
+
+```swift
+// swiftpl/ch6/exporters
+class Exporter {
+    let title: String
+
+    /// The designated initializer: sets every stored property.
+    init(title: String) {
+        self.title = title
+    }
+
+    /// A convenience initializer: delegates to another initializer of this class.
+    convenience init() {
+        self.init(title: "Untitled")
+    }
+
+    /// Exports the document. Subclasses customize the parts, not their order.
+    final func export(_ paragraphs: [String]) -> String {
+        var out = header()
+        for p in paragraphs {
+            out += paragraph(p)
+        }
+        return out + footer()
+    }
+
+    func header() -> String { title + "\n\n" }
+    func paragraph(_ text: String) -> String { text + "\n\n" }
+    func footer() -> String { "" }
+}
+
+final class MarkdownExporter: Exporter {
+    override func header() -> String { "# \(title)\n\n" }
+}
+
+final class HTMLExporter: Exporter {
+    let stylesheet: String?
+
+    init(title: String, stylesheet: String?) {
+        self.stylesheet = stylesheet  // phase 1: this class's own properties first...
+        super.init(title: title)  // ...then the superclass's
+        // phase 2: self is fully initialized, so methods may be called here
+    }
+
+    override convenience init(title: String) {
+        self.init(title: title, stylesheet: nil)
+    }
+
+    override func header() -> String {
+        var head = "<html><head><title>\(title)</title>"
+        if let stylesheet {
+            head += "<link rel=\"stylesheet\" href=\"\(stylesheet)\">"
+        }
+        return head + "</head><body>\n<h1>\(title)</h1>\n"
+    }
+
+    override func paragraph(_ text: String) -> String { "<p>\(text)</p>\n" }
+    override func footer() -> String { "</body></html>\n" }
+}
+```
+
+A variable of type `Exporter` can refer to an instance of any subclass, and calls to overridden methods go to the subclass's version, chosen while the program runs according to the object's actual class:
+
+```swift
+// swiftpl/ch6/exporters (continued)
+let exporters: [Exporter] = [
+    Exporter(title: "Notes"),
+    MarkdownExporter(title: "Notes"),
+    HTMLExporter(),  // inherited convenience initializer: title "Untitled"
+]
+for exporter in exporters {
+    print(exporter.export(["First point.", "Second point."]))
+}
+```
+
+```
+Notes
+
+First point.
+
+Second point.
+
+# Notes
+
+First point.
+
+Second point.
+
+<html><head><title>Untitled</title></head><body>
+<h1>Untitled</h1>
+<p>First point.</p>
+<p>Second point.</p>
+</body></html>
+```
+
+(A real HTML exporter would escape its text, as Section 4.6 showed.) Here's what each part of the declarations does.
+
+`override` is required on every method, property, or initializer that replaces an inherited one. You can't override by accident by happening to choose an existing name, and you can't misspell an override without the compiler noticing that nothing is being overridden.
+
+`super.method()` calls the superclass's version of a method from an override, for when a subclass wants to extend inherited behavior rather than replace it.
+
+`final` on a method, like `export`, forbids overriding it. Here it guarantees that every exporter produces its parts in the same order. `final` on a class, like `MarkdownExporter`, forbids subclassing it at all. Besides documenting intent, `final` lets the compiler call methods directly instead of looking them up at run time.
+
+*Dynamic dispatch* is how an overridden method is found: each class has a table of its overridable methods, and a call through a reference looks up the right entry for the object's actual class. That's slightly slower than a direct call, and it prevents inlining, which is another reason to mark classes `final` unless they're meant to be subclassed.
+
+Static methods and properties can't be overridden. A class can declare `class func` or `class var` instead of `static` to make a type-level member overridable.
+
+### 6.7.2. Initialization
+
+A class's initializers must leave every stored property, including inherited ones, with a value before the object can be used. Swift enforces this with rules that are worth learning precisely, since the compiler applies them precisely.
+
+A class has two kinds of initializers. A *designated* initializer, the ordinary kind, initializes all the properties the class itself introduces and then calls a designated initializer of its superclass. A *convenience* initializer, marked `convenience`, doesn't initialize anything directly; it must call another initializer of the same class, `self.init(...)`, eventually reaching a designated one. In short: designated initializers delegate *up*, and convenience initializers delegate *across*.
+
+Initialization happens in two phases. In *phase 1*, each class in the hierarchy, from the most derived up to the root, initializes the stored properties it introduced. That's why `HTMLExporter`'s initializer sets `stylesheet` *before* calling `super.init`. Until phase 1 completes, the object isn't fully formed, so the compiler forbids calling methods, reading inherited properties, or otherwise using `self`. Once the root class's initializer has run, *phase 2* begins: control returns down the chain, and each initializer may now use `self` freely, calling methods and customizing inherited properties. This ordering guarantees that no method, not even an overridden one called from a superclass's initializer, ever sees an uninitialized property. Languages that skip such a rule allow exactly that bug.
+
+Subclasses don't automatically inherit their superclass's initializers, since an inherited initializer wouldn't know how to set the subclass's new properties. Two rules say when they do. If a subclass adds no designated initializers of its own (and gives all its new properties default values), it inherits all of the superclass's designated initializers, as `MarkdownExporter` inherits `init(title:)`. And if a subclass provides every one of its superclass's designated initializers, by inheriting or overriding them, it also inherits all of the superclass's convenience initializers. `HTMLExporter` overrides `init(title:)` (as a convenience initializer that supplies a default stylesheet), so it inherits `Exporter`'s convenience `init()`, and `HTMLExporter()` works.
+
+An initializer marked `required` must be implemented by every subclass. That matters when code creates instances through a type that might be a subclass, for example in a factory method that returns `Self`:
+
+```swift
+class Plugin {
+    let name: String
+
+    required init(name: String) {
+        self.name = name
+    }
+
+    class func make(named name: String) -> Self {
+        Self(name: name)  // works only because every subclass must have init(name:)
+    }
+}
+```
+
+Protocols that require an initializer impose the same obligation: a non-final class conforming to such a protocol must mark the implementation `required`, so that its subclasses conform too.
+
+### 6.7.3. Deinitialization
+
+A class can define a `deinit`, which runs when the last strong reference to an instance disappears (Section 2.3.4). Deinitializers are called automatically, in the reverse order of initialization: the subclass's `deinit` runs first, then its superclass's, up to the root:
+
+```swift
+class Resource {
+    deinit { print("Resource released") }
+}
+
+final class FileResource: Resource {
+    deinit { print("FileResource closing file") }
+}
+
+do {
+    _ = FileResource()
+}
+// FileResource closing file
+// Resource released
+```
+
+A `deinit` can't be called directly, takes no parameters, and has full access to the instance's properties, so it can release whatever the object owns.
+
+### 6.7.4. When to Use Inheritance
+
+Inheritance couples a subclass tightly to its superclass. The subclass depends on which methods the superclass calls, in what order, and from where, which is why changes to a base class can break subclasses in surprising ways. Swift's defaults reflect that caution: classes outside their module can't be subclassed unless they're `open` (Section 10.5), and the language offers protocols with default implementations (Section 6.3.2) as a looser form of sharing.
+
+Inheritance is the right tool when there's a genuine "is-a" relationship and subclasses share both data and the overall shape of their behavior, as in the template method pattern above, and when you're working with frameworks designed around subclassing. For sharing behavior among otherwise unrelated types, prefer protocols. For reusing an implementation, prefer composition, storing one value inside another (Section 6.3.1).
+
+**Exercise 6.7:** Add a `PlainTextExporter` subclass that wraps paragraphs at 72 characters, overriding only `paragraph(_:)`.
+
+**Exercise 6.8:** Give `Exporter` a designated initializer that takes the title and an `author: String?`, and keep `init(title:)` as a convenience initializer. Which of the subclasses need changes to keep compiling, and why?
+
+**Exercise 6.9:** Rewrite the exporters with a protocol, `Exporting`, with default implementations of `header()`, `paragraph(_:)`, and `footer()` in an extension, and structs instead of classes. What do you gain and lose? (Hint: what happens if a default implementation of `export` calls `header()`?)
+
+## 6.8. Property Wrappers
+
+Some patterns recur in property declarations: clamping a number into a range, trimming whitespace from a string, recording a property's history, logging every change. Writing the getter and setter logic by hand for every such property is repetitive, and the repetition hides the intent. A *property wrapper* packages the logic once, as a type, and lets any property adopt it with an attribute.
+
+### 6.8.1. Defining a Property Wrapper
+
+A property wrapper is a struct (or class or enum) marked `@propertyWrapper` that has a property named `wrappedValue`. Here's one that trims leading and trailing whitespace from any string stored in it:
+
+```swift
+// swiftpl/ch6/wrappers
+import Foundation
+
+@propertyWrapper
+struct Trimmed {
+    private var value = ""
+
+    var wrappedValue: String {
+        get { value }
+        set { value = newValue.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+
+    init(wrappedValue: String) {
+        self.wrappedValue = wrappedValue  // trims the initial value too
+    }
+}
+
+struct SignUp {
+    @Trimmed var name: String
+    @Trimmed var email: String
+}
+
+var form = SignUp(name: "  Ada Lovelace ", email: "ada@example.com\n")
+print("[\(form.name)] [\(form.email)]")  // "[Ada Lovelace] [ada@example.com]"
+form.name = "\tGrace Hopper  "
+print("[\(form.name)]")  // "[Grace Hopper]"
+```
+
+The attribute `@Trimmed` tells the compiler to store the property inside a `Trimmed` value and route all access through it. In effect, it rewrites the declaration of `name` into this:
+
+```swift
+private var _name: Trimmed
+var name: String {
+    get { _name.wrappedValue }
+    set { _name.wrappedValue = newValue }
+}
+```
+
+The struct's memberwise initializer still takes plain `String`s, which it passes to `init(wrappedValue:)`. To users of `SignUp`, `name` is an ordinary `String` property that happens never to have surrounding whitespace.
+
+### 6.8.2. Wrapper Arguments
+
+A property wrapper can take arguments, written after the attribute's name, which are passed to its initializer along with the property's initial value. This wrapper keeps a value within a range:
+
+```swift
+// swiftpl/ch6/wrappers (continued)
+@propertyWrapper
+struct Clamped<Value: Comparable> {
+    private var value: Value
+    let range: ClosedRange<Value>
+
+    init(wrappedValue: Value, _ range: ClosedRange<Value>) {
+        self.range = range
+        self.value = min(max(wrappedValue, range.lowerBound), range.upperBound)
+    }
+
+    var wrappedValue: Value {
+        get { value }
+        set { value = min(max(newValue, range.lowerBound), range.upperBound) }
+    }
+}
+
+struct Speaker {
+    @Clamped(0...11) var volume = 5
+    @Clamped(-1.0...1.0) var balance = 0.0
+}
+
+var s = Speaker()
+s.volume = 20
+s.balance = -3
+print(s.volume, s.balance)  // "11 -1.0"
+```
+
+`Clamped` is generic, so it works for any `Comparable` type; the compiler infers `Value` from the property's type. The declaration `@Clamped(0...11) var volume = 5` becomes a call to `Clamped(wrappedValue: 5, 0...11)`.
+
+### 6.8.3. Projected Values
+
+A wrapper can expose additional functionality through a *projected value*: a property named `projectedValue`, which users reach by prefixing the wrapped property's name with `$`. This wrapper remembers every value a property has held, and projects the history:
+
+```swift
+// swiftpl/ch6/wrappers (continued)
+@propertyWrapper
+struct History<Value> {
+    private var values: [Value]
+
+    init(wrappedValue: Value) {
+        values = [wrappedValue]
+    }
+
+    var wrappedValue: Value {
+        get { values.last! }
+        set { values.append(newValue) }
+    }
+
+    /// Every value the property has held, oldest first.
+    var projectedValue: [Value] { values }
+}
+
+struct Thermostat {
+    @History var target = 20.0
+}
+
+var t = Thermostat()
+t.target = 21
+t.target = 19.5
+print(t.target)  // "19.5"
+print(t.$target)  // "[20.0, 21.0, 19.5]"
+```
+
+`t.target` is the current value, a `Double`; `t.$target` is the projected value, here an array of `Double`s. A projected value can be of any type, chosen by the wrapper's author. SwiftUI's `@State` uses one to give access to a *binding*, a reference that lets another view read and write the same state; ArgumentParser's `@Option` uses wrappers to attach parsing information to properties, which the library reads back through reflection (Section 12.7.1).
+
+### 6.8.4. Using Wrappers Well
+
+Property wrappers can be applied to stored properties of structs, classes, and enums, and to local variables. They can't be applied to computed properties or used in protocol requirements, and a wrapped property can't also be `lazy`.
+
+Their power is also their risk: a wrapper changes what assignment *means*, invisibly at the point of use. `s.volume = 20` followed by `print(s.volume)` printing `11` is surprising unless you've seen the declaration. Wrappers work best for behavior that's simple, predictable, and clearly named, such as clamping, trimming, or recording, and for frameworks whose wrappers are widely understood. Complicated business logic is usually clearer as an ordinary method or a property observer (Section 6.6).
+
+**Exercise 6.10:** Write a `@Lowercased` property wrapper for strings. Then try to apply both wrappers to one property, as `@Trimmed @Lowercased var email: String`. When wrappers are composed like this, the outer wrapper wraps the *inner wrapper*, not the string. Why doesn't that compile with these two wrappers, and how could you change them so that it does?
+
+**Exercise 6.11:** Give `Clamped` a projected value that reports whether the most recent assignment had to be clamped, so that callers can write `if s.$volume { print("volume limited") }`.
+
+**Exercise 6.12:** Write a `@Logged` wrapper that prints a line whenever the property changes, showing the old and new values. Why might you want it to take the property's name as an argument?

@@ -888,35 +888,9 @@ Because these methods are written against the `Encoder` and `Decoder` protocols,
 
 ### 12.7.1. Property Wrappers as Field Annotations
 
-Sometimes metadata about a field should come with *behavior*: this value must stay within a range, this one should be trimmed of whitespace, this one is parsed from a command-line flag. Swift's tool for that is the *property wrapper* (we used ArgumentParser's `@Option` and `@Flag` in Section 2.3.2). A property wrapper is a type that owns a property's storage and mediates every read and write:
+Sometimes metadata about a field should come with *behavior*: this value must stay within a range, this one is trimmed of whitespace, this one is parsed from a command-line flag. Swift's tool for that is the *property wrapper*, covered in Section 6.8. A wrapper is a type that owns a property's storage and mediates every read and write, so an annotation such as `@Clamped(0...11)` is both a declaration of intent and its implementation, with nothing to look up or interpret at run time.
 
-```swift
-@propertyWrapper
-struct Clamped<Value: Comparable> {
-    private var value: Value
-    let range: ClosedRange<Value>
-
-    init(wrappedValue: Value, _ range: ClosedRange<Value>) {
-        self.range = range
-        self.value = min(max(wrappedValue, range.lowerBound), range.upperBound)
-    }
-
-    var wrappedValue: Value {
-        get { value }
-        set { value = min(max(newValue, range.lowerBound), range.upperBound) }
-    }
-}
-
-struct Volume {
-    @Clamped(0...11) var level = 5
-}
-
-var v = Volume()
-v.level = 20
-print(v.level)  // "11"
-```
-
-The annotation `@Clamped(0...11)` is both a declaration of intent and its implementation; there's nothing to look up or interpret at run time. Property wrappers and reflection also cooperate: a wrapped property's storage appears in a mirror as an instance of the wrapper type, which is how ArgumentParser discovers a command's options. It mirrors the command struct and looks for children whose values are its own wrapper types.
+Property wrappers and reflection do cooperate in one common way. A wrapped property's storage appears in a mirror as an instance of the wrapper type, under the property's name with an underscore prefix, so a library can find a type's wrapped properties by reflecting over an instance and looking for children whose values are its own wrapper types. That's how ArgumentParser discovers a command's options: it mirrors the command struct and collects the `@Option`, `@Flag`, and `@Argument` values it finds. Where some languages attach a string tag to a field and interpret it later, Swift attaches a *type* to a field, which the compiler checks and which code can discover.
 
 ## 12.8. Macros: Reflection at Compile Time
 

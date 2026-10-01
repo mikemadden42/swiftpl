@@ -49,6 +49,9 @@ Example programs carry a label such as `swiftpl/ch1/hello`, which names the pack
 - 4.4 Structs and Tuples
 - 4.5 JSON
 - 4.6 Text Templates with String Interpolation
+- 4.7 Enumerations with Associated Values
+- 4.8 Optionals
+- 4.9 Pattern Matching
 
 **[5. Functions](ch05-functions.md)**
 - 5.1 Function Declarations
@@ -69,6 +72,8 @@ Example programs carry a label such as `swiftpl/ch1/hello`, which names the pack
 - 6.4 Method Values and Key Paths
 - 6.5 Example: A Ring Buffer
 - 6.6 Encapsulation
+- 6.7 Classes and Inheritance
+- 6.8 Property Wrappers
 
 **[7. Protocols](ch07-protocols.md)**
 - 7.1 Protocols as Contracts
@@ -143,6 +148,20 @@ Example programs carry a label such as `swiftpl/ch1/hello`, which names the pack
 - 13.3 Example: Reading a Binary File Header
 - 13.4 Calling C Code with Direct Interoperation
 - 13.5 Another Word of Caution
+
+**[Appendix: Swift for Go Programmers](appendix-swift-for-go-programmers.md)**
+- A.1 At a Glance
+- A.2 Declarations and Initialization
+- A.3 Values, Pointers, and Methods
+- A.4 Interfaces and Protocols
+- A.5 Errors
+- A.6 `nil`, Optionals, and Enums
+- A.7 Generics
+- A.8 Concurrency
+- A.9 `defer`, `panic`, and `recover`
+- A.10 Memory Management
+- A.11 Tooling
+- A.12 What You'll Miss, and What You'll Gain
 
 ## Requirements
 

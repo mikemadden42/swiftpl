@@ -1,6 +1,6 @@
 # 4. Composite Types
 
-Chapter 3 covered Swift's basic types, the individual values from which everything else is built. This chapter is about combining them. Swift's standard library provides three general-purpose collections, *arrays*, *dictionaries*, and *sets*, along with array *slices*, which view part of an array; the language provides *structs* for grouping named values into new types, and *tuples* for grouping values without naming the group. At the end of the chapter, we'll use these types together to read structured data from a web service as JSON, and to produce reports from it, as text and as safely escaped HTML.
+Chapter 3 covered Swift's basic types, the individual values from which everything else is built. This chapter is about combining them. Swift's standard library provides three general-purpose collections, *arrays*, *dictionaries*, and *sets*, along with array *slices*, which view part of an array; the language provides *structs* for grouping named values into new types, and *tuples* for grouping values without naming the group. Midway through, we'll use these types together to read structured data from a web service as JSON, and to produce reports from it, as text and as safely escaped HTML. The chapter ends with three closely related features that give Swift much of its character: enumerations whose cases carry data, optionals, and pattern matching.
 
 One property ties the chapter together: all of these types are *values*. Assigning an array, passing a dictionary to a function, or storing a struct in another struct gives the recipient its own independent copy, and changing that copy never affects the original, exactly as with an `Int`. If that sounds expensive, it isn't, because Swift's collections share their storage until the moment one copy is modified. Section 4.2 explains how this *copy-on-write* technique works.
 
@@ -1010,3 +1010,485 @@ For full web applications, packages such as Elementary and Plot provide complete
 **Exercise 4.16:** Serve `forecastPage` from a Hummingbird server (Section 1.7), taking the place name and coordinates from query parameters, as in `/forecast?place=Berlin&lat=52.52&lon=13.41`.
 
 **Exercise 4.17:** Add a static method `HTML.joined(_ fragments: [HTML]) -> HTML`, and use it to remove the `HTML(stringLiteral:)` call from `forecastPage` by keeping the rows as `[HTML]`. Could `init(stringLiteral:)` be restricted so that it can't be called with a variable at all?
+
+## 4.7. Enumerations with Associated Values
+
+Section 3.6 introduced enumerations as lists of named cases, possibly with raw values. That's only half of what Swift enums can do. Each case of an enum can also carry *associated values* of its own, of any types, which makes an enum able to say "a value is exactly one of these alternatives, and here's the data that goes with whichever one it is."
+
+```swift
+enum PaymentMethod {
+    case cash
+    case card(number: String, expires: String)
+    case transfer(iban: String)
+}
+
+let p1 = PaymentMethod.cash
+let p2 = PaymentMethod.card(number: "4111 1111 1111 1111", expires: "12/28")
+```
+
+A `PaymentMethod` is a cash payment, which needs no further data, *or* a card payment, with a number and an expiry date, *or* a bank transfer, with an account number. Types like this, whose values are one of several alternatives, are called *sum types*, *tagged unions*, or *algebraic data types*. The last name comes from type theory, where structs are *product types* (a struct with two `Bool` properties has 2 × 2 possible values) and enums are *sum types* (an enum with a `Bool` case and an `Int8` case has 2 + 256). Swift's structs and enums together let you build data from both.
+
+A `switch` takes the value apart again, binding each case's associated values to new names:
+
+```swift
+func describe(_ method: PaymentMethod) -> String {
+    switch method {
+    case .cash:
+        "cash"
+    case .card(let number, _):
+        "card ending in \(number.suffix(4))"
+    case .transfer(let iban):
+        "transfer from \(iban.prefix(4))..."
+    }
+}
+```
+
+The `switch` must handle every case, and because the compiler knows exactly which cases exist, it needs no `default`. If a case is added later, say `.crypto(wallet:)`, every `switch` over `PaymentMethod` stops compiling until it handles the new case. Exhaustiveness checking turns adding an alternative from a hunt through the codebase into a list of compiler errors. Section 4.9 covers the patterns that `switch` can use in full.
+
+### 4.7.1. Making Invalid States Unrepresentable
+
+Associated values change how data can be modeled. Consider a network connection, which can be disconnected, connecting (on some attempt number), connected (with a session), or failed (with an error). A struct with a property for each piece of data might look like this:
+
+```swift
+struct ConnectionStatus {
+    var isConnected: Bool
+    var attempt: Int?  // only meaningful while connecting
+    var session: Session?  // only meaningful when connected
+    var lastError: (any Error)?  // only meaningful after failing
+}
+```
+
+Nothing stops a `ConnectionStatus` from claiming to be connected without a session, or from having both a session and an error. Every function that uses it must remember which combinations are legal, and some of them won't. An enum allows only the meaningful states:
+
+```swift
+enum ConnectionState {
+    case disconnected
+    case connecting(attempt: Int)
+    case connected(Session)
+    case failed(any Error)
+}
+```
+
+A connected state *has* a session, because the case can't be created without one, and no state has both a session and an error. The impossible combinations simply can't be written. This design principle, often stated as "make invalid states unrepresentable," removes a whole class of bugs and the defensive checks that would otherwise guard against them.
+
+### 4.7.2. Enums Are Full Types
+
+Enums are value types, like structs, and they can have methods, computed properties, initializers, and protocol conformances. A mutating method can replace `self` with a different case, which is a natural way to write state transitions:
+
+```swift
+extension ConnectionState {
+    var isUsable: Bool {
+        if case .connected = self { true } else { false }
+    }
+
+    mutating func retry() {
+        switch self {
+        case .connecting(let attempt):
+            self = .connecting(attempt: attempt + 1)
+        case .failed, .disconnected:
+            self = .connecting(attempt: 1)
+        case .connected:
+            break  // nothing to retry
+        }
+    }
+}
+```
+
+Enums can be generic, too. Two of the most important types in the standard library are generic enums: `Optional<Wrapped>`, with cases `none` and `some(Wrapped)` (Section 4.8), and `Result<Success, Failure>`, with cases `success(Success)` and `failure(Failure)` (Section 5.10). And an enum whose cases contain values of the enum's own type, like the file tree of Section 4.4.1, is marked `indirect` so that those values are stored on the heap.
+
+The compiler can synthesize `Equatable`, `Hashable`, and `Codable` conformances for enums with associated values, provided the associated values have those conformances themselves. A `Codable` enum is encoded as an object keyed by the case name:
+
+```swift
+enum Shape: Codable, Equatable {
+    case circle(radius: Double)
+    case rectangle(width: Double, height: Double)
+}
+
+let data = try JSONEncoder().encode([Shape.circle(radius: 1), .rectangle(width: 2, height: 3)])
+print(String(decoding: data, as: UTF8.self))
+// [{"circle":{"radius":1}},{"rectangle":{"width":2,"height":3}}]
+```
+
+(The order of keys within each inner object may vary.) `CaseIterable` is the exception: it can be synthesized only for enums whose cases have no associated values, since there's no way to list every possible value of `.circle(radius:)`.
+
+### 4.7.3. Example: An Inventory Shell
+
+Enums with associated values are a natural representation for *commands*. The program below keeps a stock count, driven by lines typed on its standard input, such as `add apples 12`. Each line is parsed into a `Command`, and executing a command is a `switch` over its cases:
+
+```swift
+// swiftpl/ch4/inventory
+// Inventory maintains stock counts from commands read on standard input.
+
+enum Command {
+    case add(item: String, quantity: Int)
+    case remove(item: String, quantity: Int)
+    case show(item: String)
+    case list
+}
+
+/// Parses a line such as "add apples 12" into a command, or returns nil.
+func parseCommand(_ line: String) -> Command? {
+    let words = line.split(separator: " ").map(String.init)
+    switch (words.first ?? "", words.count) {
+    case ("add", 3):
+        return Int(words[2]).map { Command.add(item: words[1], quantity: $0) }
+    case ("remove", 3):
+        return Int(words[2]).map { Command.remove(item: words[1], quantity: $0) }
+    case ("show", 2):
+        return .show(item: words[1])
+    case ("list", 1):
+        return .list
+    default:
+        return nil
+    }
+}
+
+var stock: [String: Int] = [:]
+while let line = readLine() {
+    guard let command = parseCommand(line) else {
+        print("usage: add ITEM N | remove ITEM N | show ITEM | list")
+        continue
+    }
+    switch command {
+    case .add(let item, let n):
+        stock[item, default: 0] += n
+    case .remove(let item, let n):
+        let have = stock[item] ?? 0
+        if n > have {
+            print("only \(have) \(item) in stock")
+        } else {
+            stock[item] = have - n
+        }
+    case .show(let item):
+        print("\(item): \(stock[item] ?? 0)")
+    case .list:
+        for (item, n) in stock.sorted(by: { $0.key < $1.key }) {
+            print("\(item): \(n)")
+        }
+    }
+}
+```
+
+```
+$ swift run inventory
+add apples 12
+add pears 5
+remove apples 20
+only 12 apples in stock
+remove apples 3
+list
+apples: 9
+pears: 5
+sell pears
+usage: add ITEM N | remove ITEM N | show ITEM | list
+```
+
+Parsing and executing are cleanly separated. `parseCommand` turns text into a value that's guaranteed to be well-formed. An `.add` command always has an item and a numeric quantity, so the execution code never re-checks the input. The parser itself matches on a *tuple* of the first word and the word count, so each case states both conditions at once. (`Int(words[2]).map { ... }` converts the quantity and builds the command only if the conversion succeeds; Section 4.8 explains `map` on optionals.)
+
+**Exercise 4.18:** Add a `rename OLD NEW` command, and confirm that the compiler points out every `switch` that needs updating.
+
+**Exercise 4.19:** Make `Command` conform to `Codable`, and add `save FILE` and `load FILE` commands that write and read the stock along with a log of every command executed.
+
+## 4.8. Optionals
+
+Optionals have appeared in nearly every program in this book, starting with Chapter 1. This section collects what we've seen in one place and fills in the remaining pieces.
+
+### 4.8.1. Optional Is an Enum
+
+There's nothing magic about `Optional`. It's a generic enum in the standard library, declared essentially like this:
+
+```swift
+enum Optional<Wrapped> {
+    case none
+    case some(Wrapped)
+}
+```
+
+The language adds conveniences on top: `T?` is shorthand for `Optional<T>`, `nil` is shorthand for `.none`, and a value of type `T` is wrapped in `.some` automatically wherever a `T?` is expected:
+
+```swift
+let a: Int? = 42  // Optional.some(42)
+let b: Int? = nil  // Optional.none
+```
+
+What *is* special is the guarantee the type system gives in return: a value of type `T` can never be `nil`. Only an optional can be absent, and Swift won't let you use an optional as if it were the value inside. That single rule eliminates null-pointer errors from ordinary Swift code.
+
+### 4.8.2. Getting the Value Out
+
+There are several ways to unwrap an optional, each suited to a different situation.
+
+**Optional binding** tests and unwraps in one step: `if let`, `guard let`, and `while let` bind the value to a new constant when it's present. Since Swift 5.7, `if let name` is shorthand for `if let name = name`:
+
+```swift
+if let port = Int(portText) {
+    listen(on: port)
+}
+
+guard let config = loadConfig() else {
+    fatalError("no configuration")
+}
+```
+
+**`??`**, the *nil-coalescing operator*, supplies a default when there's no value. It chains, so the first non-`nil` value in a list of fallbacks wins:
+
+```swift
+let port = commandLinePort ?? environmentPort ?? 8080
+```
+
+**Optional chaining**, written `?.`, calls a method, reads a property, or subscripts only when a value is present. If any link in the chain is `nil`, the whole expression is `nil`, so the result of a chain is always optional:
+
+```swift
+struct Address { var city: String }
+struct Customer { var address: Address? }
+struct Order { var customer: Customer? }
+
+var order: Order? = Order(customer: Customer(address: Address(city: "York")))
+let city = order?.customer?.address?.city  // String?: Optional("York")
+let length = order?.customer?.address?.city.count  // Int?: Optional(4)
+order?.customer?.address?.city = "Leeds"  // assigns only if every link is present
+```
+
+**`map` and `flatMap`** transform the value inside an optional, if there is one, without unwrapping it by hand. `map` applies a function that returns a plain value, and `flatMap` one that itself returns an optional, avoiding a nested `T??`:
+
+```swift
+let doubled = Int("21").map { $0 * 2 }  // Optional(42)
+let port = ProcessInfo.processInfo.environment["PORT"].flatMap { Int($0) } ?? 8080
+```
+
+The second line reads naturally from left to right: the variable if it's set, parsed as a number if it's valid, and 8080 otherwise. On sequences, the related `compactMap` (Section 1.2) applies an optional-returning function to every element and keeps only the non-`nil` results.
+
+**Force-unwrapping**, `!`, asserts that a value is present and traps if it isn't. It's appropriate only when absence would be a bug, as with `URL(string: "https://swift.org")!` on a literal you know to be valid.
+
+Optionals can be compared with `==` when the wrapped type is `Equatable`, and a non-optional value is promoted for the comparison: `Int("3") == 3` is `true`, and `Int("x") == nil` is `true`.
+
+### 4.8.3. Nested Optionals
+
+Optionals can wrap optionals, and occasionally that's meaningful. A dictionary whose values are themselves optional returns a doubly optional result from a lookup, because there are two different ways for a value to be absent:
+
+```swift
+let scores: [String: Int?] = ["ada": 97, "bob": nil]
+
+print(scores["ada"] as Any)  // "Optional(Optional(97))"
+print(scores["bob"] as Any)  // "Optional(nil)": an entry whose value is nil
+print(scores["eve"] as Any)  // "nil": no entry at all
+```
+
+Pattern matching (Section 4.9) tells the three situations apart:
+
+```swift
+for name in ["ada", "bob", "eve"] {
+    switch scores[name] {
+    case let score??:
+        print("\(name) scored \(score)")
+    case .some(nil):
+        print("\(name) has no score yet")
+    case nil:
+        print("\(name) isn't registered")
+    }
+}
+```
+
+The pattern `score??` unwraps two levels at once. If you find yourself writing it often, it's usually a sign that an enum with explicitly named cases would be clearer.
+
+### 4.8.4. Implicitly Unwrapped Optionals
+
+A type written `T!` instead of `T?` is an *implicitly unwrapped optional*. It's still an optional, and can be `nil`, but wherever it's used as a `T`, the compiler force-unwraps it automatically, trapping if it's `nil`:
+
+```swift
+final class ReportGenerator {
+    var template: Template!  // set by configure(), which must be called before render()
+
+    func configure(with t: Template) {
+        template = t
+    }
+
+    func render(_ data: [String: String]) -> String {
+        template.render(data)  // implicitly force-unwrapped; traps if configure() wasn't called
+    }
+}
+```
+
+Implicitly unwrapped optionals exist mainly for two reasons. Some values can't be set during initialization but are guaranteed to be set before use, as with views connected from interface files in Apple's UI frameworks. And C and Objective-C APIs that lack nullability annotations are imported with `T!` types, because the compiler doesn't know whether they can return null (Section 13.4).
+
+In your own code, prefer alternatives that let the compiler check your assumptions: initialize the property in `init`, make it `lazy`, or keep it a plain optional and unwrap it where it's used. An implicitly unwrapped optional is a promise that the compiler can't verify, and a broken promise is a crash.
+
+**Exercise 4.20:** Write a function `firstWord(in lines: [String]) -> String?` that returns the first word of the first non-blank line, using only optional chaining, `first(where:)`, and `??`, with no `if` statements.
+
+**Exercise 4.21:** Rewrite `ReportGenerator` so that `template` is a non-optional property set by the initializer. What changes for callers?
+
+## 4.9. Pattern Matching
+
+A *pattern* describes the shape of a value: a particular number, a tuple with a zero in its first position, a `.card` case with a number beginning with "4", any non-`nil` optional, a value of type `String`. *Pattern matching* tests a value against a pattern and, if it matches, binds parts of it to names. Swift uses patterns in many places, and this section gathers them.
+
+### 4.9.1. Kinds of Patterns
+
+Swift's patterns can be nested inside each other to any depth:
+
+```
+_                       wildcard: matches anything, binds nothing
+name                    identifier: matches anything, binds it to name (with let or var)
+(p1, p2, ...)           tuple: matches tuples whose elements match p1, p2, ...
+.case(p1, ...)          enum case: matches that case, with its associated values matching p1, ...
+p?                      optional: matches a non-nil optional whose value matches p
+is T / p as T           type casting: matches values whose dynamic type is T (Section 7.10)
+expression              expression: matches values equal to the expression, or in its range, via ~=
+```
+
+Here are several kinds working together. The function classifies a point on a grid:
+
+```swift
+func describe(_ point: (Int, Int)) -> String {
+    switch point {
+    case (0, 0):
+        "the origin"
+    case (_, 0):
+        "on the x-axis"
+    case (0, _):
+        "on the y-axis"
+    case (-5...5, -5...5):
+        "near the origin"
+    case let (x, y) where x == y:
+        "on the diagonal, at \(x)"
+    case let (x, y):
+        "at (\(x), \(y))"
+    }
+}
+
+print(describe((0, 7)))  // "on the y-axis"
+print(describe((3, -2)))  // "near the origin"
+print(describe((9, 9)))  // "on the diagonal, at 9"
+```
+
+Cases are tried in order, and the first match wins. `_` ignores an element; `-5...5` is an *expression pattern* that matches any value in the range; `let (x, y)` binds both elements; and a `where` clause adds an arbitrary condition. The final case matches everything, which is what makes the `switch` exhaustive without a `default`.
+
+Enum case patterns nest, and can be combined with `where`:
+
+```swift
+enum Payment {
+    case cash(amount: Int)
+    case card(number: String, amount: Int)
+    case voucher(code: String)
+}
+
+func review(_ payment: Payment) -> String {
+    switch payment {
+    case .cash(let amount) where amount > 10_000:
+        "large cash payment: needs a second signature"
+    case .card(let number, _) where number.hasPrefix("4"):
+        "Visa card"
+    case .cash, .card:
+        "ok"
+    case .voucher(let code):
+        "voucher \(code)"
+    }
+}
+```
+
+Several patterns can share a case, separated by commas, as in `case .cash, .card:`, provided they bind the same names with the same types, or none at all.
+
+### 4.9.2. Where Patterns Appear
+
+`switch` is the most common home for patterns, but not the only one.
+
+`if case` and `guard case` test a single pattern, which is often clearer than a `switch` when only one case matters:
+
+```swift
+if case .card(_, let amount) = payment, amount > 100 {
+    print("card payment over 100")
+}
+
+guard case .connected(let session) = state else {
+    throw ClientError.notConnected
+}
+session.send(request)  // session is in scope after the guard
+```
+
+`for case` iterates over only the elements of a sequence that match a pattern. Combined with the optional pattern `x?`, it's a concise way to skip `nil`s:
+
+```swift
+let readings: [Int?] = [12, nil, 15, nil, 9]
+for case let r? in readings {
+    print(r)  // 12, 15, 9
+}
+
+enum Outcome {
+    case succeeded(Int)
+    case failed(String)
+}
+
+let outcomes: [Outcome] = [.succeeded(200), .failed("timeout"), .succeeded(204), .failed("refused")]
+for case .failed(let reason) in outcomes {
+    print("failure: \(reason)")  // "timeout", "refused"
+}
+```
+
+`while case` repeats as long as a value matches. `catch` clauses use patterns to choose which errors they handle (Section 5.4.2). And a `let` or `var` declaration is itself a pattern match, which is how tuple destructuring works: `let (quotient, remainder) = 47.quotientAndRemainder(dividingBy: 5)`.
+
+### 4.9.3. Exhaustiveness
+
+The compiler checks that a `switch` covers every possible value. For enums, `Bool`, and tuples built from them, it can reason about the cases precisely and report exactly which are missing:
+
+```swift
+switch (state.isUsable, payment) {
+case (true, .cash), (true, .card):
+    // ...
+case (false, _):
+    // ...
+}
+// error: switch must be exhaustive
+// note: add missing case: '(true, .voucher(code: _))'
+```
+
+For types with too many values to enumerate, such as integers and strings, a `switch` needs a `default` or a final catch-all pattern.
+
+Enums from libraries compiled with library evolution (Section 10.5.1), which includes many in Apple's SDKs, may gain new cases in future versions of the library. A `switch` over one should include an `@unknown default` case, which handles future cases at run time while still letting the compiler warn you when a case it knows about isn't handled explicitly.
+
+### 4.9.4. Custom Matching with `~=`
+
+Expression patterns are matched by calling the operator `~=`, with the pattern on the left and the value on the right. The standard library defines `~=` for `Equatable` values (equality) and for ranges (containment), which is why `case 200..<300:` works. Defining new overloads of `~=` extends `switch` to new kinds of patterns. Here's one that matches strings against regular expressions:
+
+```swift
+// swiftpl/ch4/classify
+// Classify reports the kind of each whitespace-separated token in its input.
+
+func ~= (pattern: Regex<Substring>, value: String) -> Bool {
+    value.wholeMatch(of: pattern) != nil
+}
+
+func kind(of token: String) -> String {
+    switch token {
+    case /\d+/: "integer"
+    case /\d+\.\d+/: "decimal"
+    case /[A-Za-z_][A-Za-z0-9_]*/: "identifier"
+    case /"[^"]*"/: "string"
+    default: "other"
+    }
+}
+
+while let line = readLine() {
+    for token in line.split(whereSeparator: \.isWhitespace) {
+        print("\(token)\t\(kind(of: String(token)))")
+    }
+}
+```
+
+```
+$ echo 'let total = 42 + 3.5 "done"' | swift run classify
+let	identifier
+total	identifier
+=	other
+42	integer
++	other
+3.5	decimal
+"done"	string
+```
+
+The regex literals, such as `/\d+/`, are values of type `Regex<Substring>`, so each case calls our `~=`, which asks whether the whole token matches. Regex literals written with bare slashes are enabled by default in the Swift 6 language mode.
+
+Custom `~=` overloads are powerful, but use them sparingly: a reader seeing `case /\d+/:` must know that an overload exists to understand what the `switch` does.
+
+**Exercise 4.22:** Write FizzBuzz (print the numbers 1 to 100, replacing multiples of 3 with "Fizz", multiples of 5 with "Buzz", and multiples of both with "FizzBuzz") as a single `switch` on the tuple `(n % 3, n % 5)`.
+
+**Exercise 4.23:** Extend `kind(of:)` to recognize hexadecimal integers (`0x1F`) and negative numbers. Why does the order of the cases matter?
+
+**Exercise 4.24:** Define a `~=` overload that lets a `switch` on an `Int` use predicate functions as patterns, so that `case isEven:` works for `func isEven(_ n: Int) -> Bool`. Is this a good idea?
