@@ -460,6 +460,11 @@ With these, kilometers behave like numbers, but only with each other:
 let warmup: Kilometers = 3
 print(marathon + warmup)  // "45.195 km"
 print(warmup < marathon)  // "true"
+```
+
+But they still can't be mixed with miles:
+
+```swift
 let m = kmToMiles(marathon)
 print(marathon == m)  // compile error: '==' cannot be applied to 'Kilometers' and 'Miles'
 ```

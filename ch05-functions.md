@@ -935,7 +935,6 @@ Swift has no way to catch a trap and keep going. Some languages offer one, and p
 For the first, ordinary thrown errors are the answer. They pass cheaply through any number of nested calls, needing only a `try` at each level. Here's the skeleton of a recursive-descent parser that stops at the first syntax error:
 
 ```swift
-// swiftpl/ch5/parse
 struct SyntaxError: Error, CustomStringConvertible {
     var position: Int
     var message: String

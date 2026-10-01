@@ -168,7 +168,7 @@ extension Tag {
 Our four slug tests are nearly identical: call the function, compare with an expected string. As more cases arrive, writing a function for each becomes tedious. In many languages, the remedy is a hand-written loop over a table of cases. Swift Testing does the looping for you. Give the test a parameter, and supply the values with `arguments:`:
 
 ```swift
-// swiftpl/ch11/slug3/Tests/SlugTests/SlugTests.swift
+// swiftpl/ch11/slug3/Tests/SlugTests/SlugTests.swift (builds on slug2)
 import Testing
 import Slug
 
@@ -351,7 +351,7 @@ One strategy is a second, simpler implementation (slow, perhaps, but obviously c
 Here's a property-based test for `slugify`. It builds random titles from a pool of characters chosen to include awkward ones: punctuation, accented capitals, digits, underscores, a hyphen, and some CJK text.
 
 ```swift
-// swiftpl/ch11/slug3
+// swiftpl/ch11/slug3/Tests/SlugTests/SlugTests.swift (continued)
 /// Returns a random title of up to 29 characters from an awkward alphabet.
 func randomTitle(using rng: inout some RandomNumberGenerator) -> String {
     let pool = Array("abcXYZ019 éÉçÇ-_,.!?'日本 ")
@@ -378,7 +378,7 @@ Each check carries a message that includes the generated title, so a failure tel
 Random tests must still be reproducible. A test that fails once and then can't be made to fail again is a frustrating thing to debug. So the generator is *seeded*: given the same seed, it produces the same sequence, and the test produces the same inputs on every run. The standard library's default generator can't be seeded, but `RandomNumberGenerator` asks for only one method, so it takes a few lines to write one. This is SplitMix64, a small, fast, well-studied algorithm:
 
 ```swift
-// swiftpl/ch11/slug3 (continued)
+// swiftpl/ch11/slug3/Tests/SlugTests/SlugTests.swift (continued)
 /// A fast, deterministic generator (SplitMix64) for reproducible tests.
 struct SeededGenerator: RandomNumberGenerator {
     private var state: UInt64
@@ -402,10 +402,10 @@ Round trips are a particularly productive kind of property: for an encoder and d
 
 Command-line programs are tested most easily when their logic is pulled out of `main` into functions that take their inputs as parameters and deliver their output somewhere the test can see. Printing straight to the standard output is the usual obstacle. The fix is to have the function write to a `TextOutputStream` (Section 7.1) passed by the caller: the real program passes the standard output, and a test passes a `String`.
 
-Here's the core of `tally`, a command that prints the most frequent words in its input:
+Here's the core of `tally`, a command that prints the most frequent words in its input. It lives in a library module, `Tally`, so that a test target can import it; a small executable target (not shown) reads the standard input and passes `tally` a `TextOutputStream` that writes to the standard output.
 
 ```swift
-// swiftpl/ch11/tally
+// swiftpl/ch11/tally/Sources/Tally/Tally.swift
 /// Writes the n most frequent words in text, most frequent first,
 /// with ties broken alphabetically.
 func tally(_ text: String, top n: Int, to out: inout some TextOutputStream) {
@@ -422,10 +422,13 @@ func tally(_ text: String, top n: Int, to out: inout some TextOutputStream) {
 }
 ```
 
-and a test of it:
+and a test of it, in the package's test target:
 
 ```swift
-// swiftpl/ch11/tally (continued)
+// swiftpl/ch11/tally/Tests/TallyTests/TallyTests.swift
+import Testing
+@testable import Tally
+
 @Test(arguments: [
     (text: "", top: 3, want: ""),
     (text: "a b a", top: 1, want: "2 a\n"),
@@ -451,7 +454,7 @@ Each kind has its strengths. Black-box tests survive refactoring, since they don
 Often, though, the best way to test hard-to-reach behavior is to make it easy to reach by injecting its dependencies. Consider a rate limiter that allows at most `limit` events in any window of `window` seconds. Its behavior depends on the passage of time, and a test that actually waited for windows to expire would be slow and flaky. So the limiter takes its clock as a parameter, defaulting to the real one:
 
 ```swift
-// swiftpl/ch11/ratelimit
+// swiftpl/ch11/ratelimit/Sources/RateLimit/RateLimit.swift
 import Foundation
 
 struct RateLimiter {
@@ -482,7 +485,10 @@ struct RateLimiter {
 The test supplies a clock it controls completely:
 
 ```swift
-// swiftpl/ch11/ratelimit (continued)
+// swiftpl/ch11/ratelimit/Tests/RateLimitTests/RateLimitTests.swift
+import Testing
+@testable import RateLimit
+
 @Test func limitsBursts() {
     var time = 0.0
     var limiter = RateLimiter(limit: 2, window: 1.0, now: { time })
@@ -539,7 +545,6 @@ The simplest and most common measure is *statement coverage*: the proportion of 
 Let's measure the tests for the expression evaluator of Chapter 7. Suppose they consist of a single parameterized test:
 
 ```swift
-// swiftpl/ch11/eval
 @Test(arguments: [
     ("x + x", "x + x"),
     ("sqrt(4)", "2"),
