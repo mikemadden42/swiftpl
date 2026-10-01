@@ -610,9 +610,7 @@ print(3 * 2 ** 2)   // "12.0": 3 * (2 ** 2)
 print(√16 + 1)      // "5.0"
 ```
 
-The standard library declares groups for its own operators, from `BitwiseShiftPrecedence` and `MultiplicationPrecedence` at the tight end, through `AdditionPrecedence`, `RangeFormationPrecedence`, and `ComparisonPrecedence`, down to `AssignmentPrecedence`, and a new group places itself among them with `higherThan` and `lowerThan`. An infix operator declared without a group gets `DefaultPrecedence`, which binds just more tightly than the ternary conditional and doesn't associate at all, so `a ** b ** c` with such an operator would be an error until you add parentheses.
-
-Operator names are made of symbol characters such as `/ = - + ! * % < > & | ^ ~ ?` and many mathematical symbols from Unicode, like `√` and `⊕`. A few tokens, among them `=`, `->`, `//`, and `/*`, are reserved. Whitespace matters: an operator with whitespace on both sides, or on neither, is infix, one attached only to the following operand is prefix, and one attached only to the preceding operand is postfix. That's why `√16` works, and why `a **b` is an error: it's parsed as `a` followed by a prefix operator `**` applied to `b`.
+The standard library's own operators belong to groups such as `MultiplicationPrecedence` and `AdditionPrecedence`, and a new group places itself among them with `higherThan` and `lowerThan`. The rules for which characters can form an operator, and how surrounding whitespace decides whether it's prefix, infix, or postfix, are spelled out in *The Swift Programming Language*; the short version is that `√16` works, while `a **b` doesn't.
 
 Use this power sparingly. Overloading `+`, `==`, or `<` for a type where they have their usual meaning makes code read naturally, and the standard library's protocols expect it. A new operator, by contrast, is a name that readers can't pronounce, can't easily search for, and must look up before they can understand any expression that uses it. New operators earn their keep in a few places: notation that's already standard in a field, such as `**` or `⊕` in mathematical code, and small domain-specific languages where a handful of operators appear on every line. Everywhere else, a method with a good name is clearer.
 
@@ -754,6 +752,15 @@ print(c.reduce(0, +))  // "15"
 print(c.contains(3))  // "true"
 print(Array(c.prefix(2)))  // "[5, 4]"
 ```
+
+`map` and `filter` are *eager*: each builds a complete array before the next step begins. A chain of them over a large sequence allocates an intermediate array per step, and over an infinite sequence never finishes. The `lazy` property returns a view of the sequence whose `map`, `filter`, and similar methods do nothing until elements are requested, then compute only those:
+
+```swift
+let squares = (1...).lazy.map { $0 * $0 }
+print(Array(squares.filter { $0.isMultiple(of: 3) }.prefix(3)))  // "[9, 36, 81]"
+```
+
+`(1...)` counts up forever, but only the first nine squares are ever computed. Use `lazy` when a chain is long, the sequence is large or unbounded, or only a few results are needed; otherwise eager arrays are simpler, and a lazy closure runs again each time the result is iterated.
 
 A protocol can name its most important associated types as *primary associated types*, in angle brackets after its name, as in `protocol Sequence<Element>` and `protocol Collection<Element>`. That's what makes constrained types like `some Sequence<Int>`, used for `multiples(of:upTo:)` in Section 7.5, and `any Collection<String>` possible.
 

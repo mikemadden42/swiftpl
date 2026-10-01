@@ -859,92 +859,78 @@ For most code, ARC is invisible. It matters in two situations: when objects refe
 
 ### 6.9.1. Reference Cycles
 
-Here's a document that can be shown in several windows. The document keeps track of its windows, and each window refers back to its document:
+Here's an event bus, a common way to decouple the parts of a program: publishers post events without knowing who's listening, and subscribers register closures to be called for each event. An `ErrorCounter` subscribes to count the error events in a log:
 
 ```swift
-// swiftpl/ch6/documents
-final class Document {
-    let title: String
-    var windows: [Window] = []
+// swiftpl/ch6/eventbus
+final class EventBus {
+    private var handlers: [(String) -> Void] = []
 
-    init(title: String) { self.title = title }
-    deinit { print("closing document \(title)") }
-
-    func openWindow() {
-        windows.append(Window(document: self))
+    func subscribe(_ handler: @escaping (String) -> Void) {
+        handlers.append(handler)
     }
+    func publish(_ event: String) {
+        for handler in handlers { handler(event) }
+    }
+    deinit { print("bus freed") }
 }
 
-final class Window {
-    let document: Document  // strong: completes a cycle
-    init(document: Document) { self.document = document }
-    deinit { print("closing a window") }
+final class ErrorCounter {
+    let bus: EventBus
+    private(set) var errors = 0
+
+    init(bus: EventBus) {
+        self.bus = bus
+        bus.subscribe { event in
+            if event.hasPrefix("error") { self.errors += 1 }
+        }
+    }
+    deinit { print("counter freed after \(errors) errors") }
 }
 
 do {
-    let report = Document(title: "Report")
-    report.openWindow()
-    report.openWindow()
+    let bus = EventBus()
+    let counter = ErrorCounter(bus: bus)
+    for line in ["start", "error: disk full", "retry", "error: timeout"] {
+        bus.publish(line)
+    }
+    print("errors: \(counter.errors)")
 }
 print("done")
 ```
 
-The program prints only `done`. When the `do` block ends, the constant `report` goes away, but the document's count doesn't reach zero, because each window still holds a strong reference to it, and the windows' counts don't reach zero, because the document's array holds them. No `deinit` ever runs, and the three objects stay in memory, unreachable, until the program exits. This is a *reference cycle*, and it's the one kind of leak that ARC can't prevent on its own.
+The program prints `errors: 2` and `done`, and neither `deinit` runs. When the `do` block ends, the constants `bus` and `counter` go away, but the objects don't: the counter holds the bus, the bus holds the closure, and the closure, which captured `self`, holds the counter. Each count stays at one, and the objects stay in memory, unreachable, until the program exits. This is a *reference cycle*, the one kind of leak ARC can't prevent on its own, and closures stored by the objects they capture are its most common source.
 
-The fix is to decide which side owns which. A document owns its windows; a window merely refers to the document it shows. The reference back to the owner should therefore not keep it alive. Swift offers two kinds of non-owning reference:
+### 6.9.2. Breaking Cycles
 
-- A `weak` reference doesn't increment the count, and is set to `nil` automatically when its object is freed. It must be a `var` of optional type.
-- An `unowned` reference doesn't increment the count either, but it's non-optional, because it promises that the object will outlive the reference. Using an `unowned` reference after its object has been freed is a programming error, and traps (Section 5.9).
+The fix is to decide which references *own* their objects and make the others non-owning. Swift offers two kinds of non-owning reference, for both properties and closure captures:
 
-A window can't exist without its document, so `unowned` expresses the relationship exactly:
+- A `weak` reference doesn't increment the count, and becomes `nil` automatically when its object is freed. It must be a `var` of optional type.
+- An `unowned` reference doesn't increment the count either, but it's non-optional, because it promises that the object will outlive the reference. Using an `unowned` reference after its object has been freed traps (Section 5.9).
+
+Which link should be non-owning? The counter uses the bus, so it's reasonable for it to keep the bus alive. But the bus shouldn't keep its subscribers alive; it merely notifies them while they exist. So the closure should capture the counter weakly, with a *capture list* (Section 5.6.1):
 
 ```swift
-final class Window {
-    unowned let document: Document
-    init(document: Document) { self.document = document }
-    deinit { print("closing a window") }
+bus.subscribe { [weak self] event in
+    guard let self else { return }  // the counter is gone; ignore the event
+    if event.hasPrefix("error") { self.errors += 1 }
 }
 ```
 
 Now the program prints:
 
 ```
-closing document Report
-closing a window
-closing a window
+errors: 2
+counter freed after 2 errors
+bus freed
 done
 ```
 
-When `report` disappears, the document's count reaches zero. Its `deinit` runs, then its stored properties are destroyed, releasing the array, which releases the windows.
+`[unowned self]` would also break the cycle, but it would be wrong here: the bus can outlive the counter, and the next event published after the counter was freed would trap. Choose `unowned` only when the lifetimes are tied, such as a back-reference from an object to the parent that owns it, and `weak` otherwise. The worst case of `weak` is a `nil` to handle, rather than a crash.
 
-Choose `weak` when the referenced object can legitimately disappear first and the code holding the reference should cope, as with a delegate, an observer, or a cache entry. Choose `unowned` when the lifetimes are tied, as here, and a dangling reference would be a bug. When in doubt, `weak` is the safe choice: its worst case is a `nil` you have to handle rather than a trap.
+Breaking the cycle at a different link would also stop the leak, but not with the right meaning. Making the counter's `bus` property `unowned` leaves the bus holding the closure and the closure holding the counter, so a counter would live exactly as long as its bus, even after everything else had finished with it. Find the reference that *shouldn't* imply ownership, and make that one non-owning.
 
-### 6.9.2. Closures and Capture Lists
-
-Closures are reference types, and a closure holds strong references to the class instances it captures. An object that stores a closure that uses `self` therefore creates a cycle, from the object to the closure and back:
-
-```swift
-// swiftpl/ch6/ticker
-final class Ticker {
-    var count = 0
-    var onTick: (() -> Void)?
-
-    init() {
-        onTick = { self.count += 1 }  // cycle: self -> onTick -> self
-    }
-    deinit { print("ticker freed") }
-}
-```
-
-This is the situation described in Section 5.6.1, and a *capture list* breaks the cycle. Capture lists accept the same `weak` and `unowned` modifiers as properties, with the same meanings. Since `onTick` belongs to the ticker, it can't be called after the ticker is gone, so `unowned` fits:
-
-```swift
-onTick = { [unowned self] in self.count += 1 }
-```
-
-A capture list can also capture a *value* instead of the object it came from. `[title = self.title]` copies the title into the closure when the closure is created, so the closure doesn't need `self` at all. That's often the cleanest fix, when the closure needs only a property or two.
-
-Not every closure that mentions `self` causes a cycle. A non-escaping closure, like the argument to `map` or `sorted(by:)`, is gone by the time the call returns. An escaping closure that the object doesn't store, directly or indirectly, such as the body of a `Task` that finishes, keeps the object alive only until the closure itself is released. That might delay the object's `deinit`, which is sometimes exactly what's wanted, but it doesn't leak. The cycles to look for are closures stored in properties of the objects they capture, or in something those objects own, such as a timer or a notification observer.
+When a closure needs only a value or two from `self`, it can capture those instead: `[prefix = self.prefix]` copies the property into the closure when it's created, and `self` isn't captured at all. And not every closure that mentions `self` creates a cycle. A non-escaping closure, like the argument to `map`, is gone when the call returns, and an escaping one that the object doesn't store, such as the body of a `Task` that finishes, keeps the object alive only until it's done. The cycles to look for are closures stored, directly or indirectly, by the objects they capture.
 
 ### 6.9.3. When Objects Are Freed
 
@@ -965,19 +951,19 @@ Reference counting has a cost. Each increment and decrement is an atomic operati
 To find leaks, Xcode's memory graph debugger shows the objects alive in a running program and the references between them, and the Instruments Leaks template reports unreachable cycles. A test can check for leaks directly, by holding only a weak reference to an object and expecting it to be `nil` once the strong references are gone:
 
 ```swift
-@Test func documentIsFreed() {
-    weak var weakDocument: Document?
+@Test func counterIsFreed() {
+    let bus = EventBus()
+    weak var weakCounter: ErrorCounter?
     do {
-        let document = Document(title: "Test")
-        document.openWindow()
-        weakDocument = document
+        let counter = ErrorCounter(bus: bus)
+        weakCounter = counter
     }
-    #expect(weakDocument == nil)
+    #expect(weakCounter == nil)
 }
 ```
 
-**Exercise 6.13:** Build a three-level tree from the `TreeNode` type of Section 2.3.4 and write a test like `documentIsFreed` that checks that the whole tree is freed. Then make `parent` a strong reference and confirm that the test fails.
+**Exercise 6.13:** Build a three-level tree from the `TreeNode` type of Section 2.3.4 and write a test like `counterIsFreed` that checks that the whole tree is freed. Then make `parent` a strong reference and confirm that the test fails.
 
-**Exercise 6.14:** Write a program that keeps a strong reference to one of a document's windows after the document itself has been freed, and then reads the window's `document` property. What happens when `Window` holds `unowned let document: Document`? Change it to `weak var document: Document?`, and decide what a window should display when its document is gone.
+**Exercise 6.14:** With `[weak self]`, the bus still calls a closure for every counter that has ever subscribed, even after the counter is gone. Make `subscribe` return a `Subscription` object whose `deinit` removes the handler from the bus, so that a subscriber that stores its subscription is unsubscribed automatically when it's freed. Which references in your design must be weak?
 
 **Exercise 6.15:** Delegate properties are conventionally `weak`. Write a `Downloader` class with a `delegate` property of protocol type that reports progress, and explain why the protocol must be declared `protocol DownloaderDelegate: AnyObject` for the property to be `weak`.

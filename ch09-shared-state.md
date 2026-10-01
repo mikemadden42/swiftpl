@@ -332,6 +332,12 @@ Another common fix is to do the asynchronous work first and the check-and-update
 
 If reentrancy causes this much trouble, why allow it? Because a non-reentrant actor would be worse. It would stay locked for the entire duration of every call, including every network wait inside it, so one slow request would stall all other users of the actor. And two non-reentrant actors that called each other would deadlock immediately. Reentrancy keeps actors responsive and deadlock-free; the price is the discipline above.
 
+**Exercise 9.1:** Start 1,000 tasks in a task group, each trying to book one seat from a `Mutex`-protected count of 100, with the check and the update inside a single `withLock`. Confirm that exactly 100 bookings succeed. Then split the check and the update into two `withLock` calls, and see whether you can make the program oversell.
+
+**Exercise 9.2:** Implement the other fix described above for the reentrant `book`: authorize the payment first, then check and update the seat count with no `await` in between. What must the method do when the seats are gone by the time the payment succeeds? Which fix would a customer prefer?
+
+**Exercise 9.3:** Rewrite the actor `BoxOffice` of Section 9.3 as a `final class` that keeps its state in a `Mutex`. How do its callers change? Why can't the payment-taking `book` of this section be written the same way, with the `authorize` call inside `withLock`?
+
 ## 9.5. Lazy Initialization
 
 Some values are expensive to compute and not always needed: a large lookup table, a parsed configuration file, a compiled regular expression. It's better to create such a value the first time it's used than to pay for it at startup.
@@ -578,13 +584,13 @@ Each duplicate request now takes as long as the original, because it waited for 
 
 This pattern of memoizing *tasks* rather than values is worth remembering. It's the standard Swift answer to many problems that look like "lazy initialization, but asynchronous": loading a configuration once, establishing a single shared connection, refreshing an authentication token without a stampede of concurrent refreshes.
 
-**Exercise 9.1:** The standard library's `Result(catching:)` initializer takes a synchronous closure. Write an `async` overload, and use it to simplify `memo1` and `memo2`.
+**Exercise 9.4:** The standard library's `Result(catching:)` initializer takes a synchronous closure. Write an `async` overload, and use it to simplify `memo1` and `memo2`.
 
-**Exercise 9.2:** If a caller of `get` is cancelled, it should stop waiting. Should cancelling one caller cancel the shared computation? What if other callers are still waiting for it? Implement the policy you choose.
+**Exercise 9.5:** If a caller of `get` is cancelled, it should stop waiting. Should cancelling one caller cancel the shared computation? What if other callers are still waiting for it? Implement the policy you choose.
 
-**Exercise 9.3:** Give the cache a maximum size, evicting the least recently used entry when it's full. Be careful not to evict an entry whose task is still running.
+**Exercise 9.6:** Give the cache a maximum size, evicting the least recently used entry when it's full. Be careful not to evict an entry whose task is still running.
 
-**Exercise 9.4:** Change the cache so that failures aren't remembered, and a later `get` for the same key tries again.
+**Exercise 9.7:** Change the cache so that failures aren't remembered, and a later `get` for the same key tries again.
 
 ## 9.8. Tasks and Threads
 

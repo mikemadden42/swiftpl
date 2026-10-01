@@ -1322,19 +1322,7 @@ A *pattern* describes the shape of a value: a particular number, a tuple with a 
 
 ### 4.9.1. Kinds of Patterns
 
-Swift's patterns can be nested inside each other to any depth:
-
-```
-_                       wildcard: matches anything, binds nothing
-name                    identifier: matches anything, binds it to name (with let or var)
-(p1, p2, ...)           tuple: matches tuples whose elements match p1, p2, ...
-.case(p1, ...)          enum case: matches that case, with its associated values matching p1, ...
-p?                      optional: matches a non-nil optional whose value matches p
-is T / p as T           type casting: matches values whose dynamic type is T (Section 7.10)
-expression              expression: matches values equal to the expression, or in its range, via ~=
-```
-
-Here are several kinds working together. The function classifies a point on a grid:
+A pattern can be a wildcard `_`, a name to bind, a tuple of patterns, an enum case with patterns for its associated values, an optional pattern `p?`, a type cast (Section 7.10), or an expression to compare against, and patterns nest inside each other to any depth. Here are several kinds working together. The function classifies a point on a grid:
 
 ```swift
 func describe(_ point: (Int, Int)) -> String {

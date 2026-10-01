@@ -993,9 +993,7 @@ That suggests the rule of thumb. If what you need to know is in a declaration yo
 
 ## 12.9. Result Builders
 
-Macros aren't the only way Swift transforms code at compile time. A *result builder* turns the statements in a closure into calls that combine their values into one result. It's the mechanism behind SwiftUI's view declarations and the `RegexBuilder` library, and it lets a library offer a small declarative language whose "programs" are ordinary Swift, with `if` statements, `for` loops, and local constants, and are type-checked like any other code.
-
-Here's a builder for a tree of markup. A `Node` is either text or an element with children:
+Macros aren't Swift's only compile-time transformation. A *result builder* rewrites the statements of a closure into calls that combine their values into one result. It's the mechanism behind SwiftUI's view declarations and the `RegexBuilder` library. Here's a small one that builds a tree of markup:
 
 ```swift
 // swiftpl/ch12/markup
@@ -1010,20 +1008,22 @@ enum NodeBuilder {
     static func buildExpression(_ text: String) -> [Node] { [.text(text)] }
     static func buildBlock(_ parts: [Node]...) -> [Node] { parts.flatMap { $0 } }
     static func buildOptional(_ part: [Node]?) -> [Node] { part ?? [] }
-    static func buildEither(first part: [Node]) -> [Node] { part }
-    static func buildEither(second part: [Node]) -> [Node] { part }
     static func buildArray(_ parts: [[Node]]) -> [Node] { parts.flatMap { $0 } }
 }
 
 func element(_ tag: String, @NodeBuilder _ content: () -> [Node]) -> Node {
     .element(tag, content())
 }
-```
 
-The `@resultBuilder` attribute marks `NodeBuilder` as a builder, and `@NodeBuilder` on the `content` parameter says that closures passed for it are to be transformed. Each static method handles one kind of statement. With these few lines, building markup looks like this:
+func render(_ node: Node) -> String {
+    switch node {
+    case .text(let text):
+        text.replacing("&", with: "&amp;").replacing("<", with: "&lt;")
+    case .element(let tag, let children):
+        "<\(tag)>" + children.map(render).joined() + "</\(tag)>"
+    }
+}
 
-```swift
-// swiftpl/ch12/markup (continued)
 let tasks = ["Write chapter", "Review <draft>", "Publish"]
 let urgent = true
 
@@ -1038,56 +1038,18 @@ let page = element("div") {
         }
     }
 }
-```
-
-The closure has no `return` and no array: each line is an expression whose value becomes part of the result. The compiler rewrites the closure, roughly into this:
-
-```swift
-let v0 = NodeBuilder.buildExpression(element("h1") { ... })
-var v1: [Node]? = nil
-if urgent {
-    v1 = NodeBuilder.buildBlock(NodeBuilder.buildExpression(element("p") { ... }))
-}
-let v2 = NodeBuilder.buildOptional(v1)
-let v3 = NodeBuilder.buildExpression(element("ul") { ... })
-return NodeBuilder.buildBlock(v0, v2, v3)
-```
-
-`buildExpression` converts each expression into the builder's component type, here `[Node]`, which is how both `Node` values and plain strings are accepted. `buildBlock` combines the components of a block. An `if` without an `else` goes through `buildOptional`; an `if`-`else` or a `switch` goes through `buildEither`, once per branch; and a `for` loop collects one component per iteration and passes them all to `buildArray`. A builder that doesn't define a method can't use the corresponding statement: remove `buildArray`, and the `for` loop becomes a compile-time error. Statements that have no builder method at all, such as `while` and `guard`, can't appear in a builder closure.
-
-Rendering the tree is an ordinary recursive function over the enum (Section 4.7), with escaping for text as in Section 4.6.2:
-
-```swift
-// swiftpl/ch12/markup (continued)
-func escape(_ text: String) -> String {
-    text.replacing("&", with: "&amp;")
-        .replacing("<", with: "&lt;")
-        .replacing(">", with: "&gt;")
-}
-
-func render(_ node: Node) -> String {
-    switch node {
-    case .text(let text):
-        escape(text)
-    case .element(let tag, let children):
-        "<\(tag)>" + children.map(render).joined() + "</\(tag)>"
-    }
-}
-
 print(render(page))
 ```
 
 ```
-<div><h1>To Do</h1><p>Due today!</p><ul><li>Write chapter</li><li>Review &lt;draft&gt;</li><li>Publish</li></ul></div>
+<div><h1>To Do</h1><p>Due today!</p><ul><li>Write chapter</li><li>Review &lt;draft></li><li>Publish</li></ul></div>
 ```
 
-Builders have a few more hooks. `buildFinalResult` converts the combined components into a different final type; `buildLimitedAvailability` handles `if #available` checks; and the attribute can be applied to a function, method, or computed property, as well as a parameter, so that its body is transformed too. SwiftUI's `body` property is a computed property marked, through a protocol requirement, with `@ViewBuilder`.
+Because `content` is marked `@NodeBuilder`, the compiler rewrites each closure passed for it. Every expression statement goes through `buildExpression`, which is how both `Node` values and plain strings are accepted; the results of a block are combined by `buildBlock`; an `if` without an `else` goes through `buildOptional`; and a `for` loop's iterations are collected by `buildArray`. A statement the builder has no method for is a compile-time error, so this builder rejects `if`-`else` until it gains the two `buildEither` methods.
 
-Compared with macros, result builders are modest. A builder can only combine values that the closure's statements produce, and can't inspect or generate declarations. But it needs no separate package or compiler plug-in, the code inside a builder closure is ordinary Swift that's easy to read and debug, and error messages point at the user's own code. When a library needs a declarative syntax for assembling values, a result builder is usually the right tool, and a macro is the one to reach for when it needs to generate code.
+A result builder can only combine the values its statements produce; unlike a macro, it can't inspect or generate declarations. But it needs no compiler plug-in, and the code inside the closure is ordinary, type-checked Swift. When a library needs a declarative way to assemble values, a builder is usually enough.
 
-**Exercise 12.13:** Add attributes to elements, so that a caller can write `element("a", ["href": url]) { "home" }`. Attribute values need escaping too; which characters must be escaped inside a quoted attribute?
-
-**Exercise 12.14:** Write a result builder for command-line arguments, so that code launching a process with `Process` can write the argument list declaratively, including flags that appear only when a condition holds and one argument per input file.
+**Exercise 12.13:** Add `buildEither(first:)` and `buildEither(second:)` so the builder accepts `if`-`else` and `switch`, then add attributes, so that a caller can write `element("a", ["href": url]) { "home" }`. Which characters must be escaped inside a quoted attribute value?
 
 ## 12.10. A Word of Caution
 
