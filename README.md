@@ -1,10 +1,10 @@
 # The Swift Programming Language
 
-*A book in the style of Donovan & Kernighan's* The Go Programming Language, *rewritten for Swift 6.*
+*A book about Swift 6, modeled on the structure of Donovan & Kernighan's* The Go Programming Language.
 
-Each chapter follows the shape of its counterpart in the Go book. Where Swift has a direct equivalent, the section keeps its topic. Where Go and Swift differ (Go's channels against Swift's structured concurrency, Go's slices against Swift's copy-on-write collections, Go's struct embedding against Swift's protocol extensions), the section covers the Swift idea that solves the same problem.
+The chapters follow the same overall plan as the Go book, a tutorial, then the language from the ground up, then concurrency, packages, testing, reflection, and low-level programming, but the text, examples, and exercises are original and written for Swift. Where the two languages differ, chapters cover the Swift way of solving the same problem: structured concurrency and asynchronous sequences rather than channels, copy-on-write collections rather than slices, protocol extensions rather than struct embedding.
 
-Example programs carry a label such as `swiftpl/ch1/helloworld`, which names the package directory where you would keep the code. Each one is a complete Swift package executable unless the text says otherwise.
+Example programs carry a label such as `swiftpl/ch1/hello`, which names the package directory where you would keep the code. Unless the text says otherwise, each is the `main.swift` of an executable package.
 
 ## Contents
 
@@ -110,12 +110,12 @@ Example programs carry a label such as `swiftpl/ch1/helloworld`, which names the
 - 9.8 Tasks and Threads
 
 **[10. Packages and the Swift Package Manager](ch10-packages.md)**
-- 10.1 Introduction
-- 10.2 Package Identity and Dependencies
+- 10.1 Modules, Targets, Products, and Packages
+- 10.2 Creating and Laying Out a Package
 - 10.3 The Package Manifest
-- 10.4 Import Declarations
+- 10.4 Depending on Other Packages
 - 10.5 Access Levels Across Modules
-- 10.6 Modules and Naming
+- 10.6 Imports and Module Interfaces
 - 10.7 The `swift` Tool
 
 **[11. Testing](ch11-testing.md)**
@@ -146,4 +146,22 @@ Example programs carry a label such as `swiftpl/ch1/helloworld`, which names the
 
 ## Requirements
 
-The examples target Swift 6 with the Swift 6 language mode and strict concurrency checking, on macOS or Linux. A few programs use packages from the Swift on Server ecosystem ([SwiftNIO](https://github.com/apple/swift-nio), [Hummingbird](https://github.com/hummingbird-project/hummingbird)) and from the Swift project itself ([swift-numerics](https://github.com/apple/swift-numerics)). Chapter 10 explains how to declare them.
+The examples target Swift 6 in the Swift 6 language mode, with strict concurrency checking, on macOS or Linux. Some use features from Swift 6.1 or 6.2, which the text points out. Chapter 10 explains how to declare package dependencies. The packages used in the book are:
+
+| Package | Used for | Chapters |
+|---|---|---|
+| [swift-argument-parser](https://github.com/apple/swift-argument-parser) | command-line options | 2, 7, 10 |
+| [Hummingbird](https://github.com/hummingbird-project/hummingbird) | web servers | 1, 4 |
+| [SwiftNIO](https://github.com/apple/swift-nio) and [swift-nio-extras](https://github.com/apple/swift-nio-extras) | TCP servers | 8 |
+| [swift-numerics](https://github.com/apple/swift-numerics) | complex numbers | 3 |
+| [swift-crypto](https://github.com/apple/swift-crypto) | SHA-256 digests | 4, 8 |
+| [SwiftSoup](https://github.com/scinfu/SwiftSoup) | HTML parsing | 5, 8 |
+| [swift-async-algorithms](https://github.com/apple/swift-async-algorithms) | channels and sequence operators | 8 |
+| [swift-collections](https://github.com/apple/swift-collections) | `Deque` | 5, 8 |
+| [swift-system](https://github.com/apple/swift-system) | `Errno`, `FilePath` | 7, 10 |
+| [swift-log](https://github.com/apple/swift-log) | logging | 5 |
+| [swift-syntax](https://github.com/swiftlang/swift-syntax) | macros | 12 |
+| [package-benchmark](https://github.com/ordo-one/package-benchmark) | benchmarks | 11 |
+| [swift-docc-plugin](https://github.com/swiftlang/swift-docc-plugin) | documentation | 10 |
+
+Chapter 13's SQLite example also needs the SQLite development library (`libsqlite3-dev` on Debian and Ubuntu); on Apple platforms, SQLite is part of the SDK.

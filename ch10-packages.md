@@ -1,79 +1,57 @@
 # 10. Packages and the Swift Package Manager
 
-A modest-size program today might contain 10,000 functions. Yet its author need think about only a few of them and design even fewer, because the vast majority were written by others and made available for reuse through modules and packages.
+Programs aren't written from scratch. Even a small command-line tool leans on the standard library for strings and collections, on Foundation for files and dates, and perhaps on a few open-source packages for argument parsing or networking. A large application may depend on dozens of packages, each with dependencies of its own. Keeping all that organized (deciding what code goes where, what each piece exposes to the others, which versions of outside code to use, and how to build it all reproducibly) is the job of a language's module and package system.
 
-Swift comes with a standard library and core libraries (Foundation, Dispatch, XCTest, Swift Testing) that cover the needs of most applications, and the Swift community has published thousands more packages, many of which can be found at `swiftpackageindex.com`. In this chapter, we'll show how to use existing packages and create new ones.
+In Swift, that system is the Swift Package Manager, *SwiftPM* for short, which ships with every Swift toolchain. We've used it since Chapter 1 to build and run examples. This chapter explains how it works: how code is divided into modules, targets, and packages; how a manifest describes them; how dependencies are declared, resolved, and pinned; how access levels and imports control what each module sees of the others; and how the `swift` command builds, tests, documents, and formats a package.
 
-Swift also comes with the Swift Package Manager (SwiftPM), a sophisticated but simple-to-use tool for managing modules and packages. At the beginning of the book, we showed how to use `swift run` to build and run example programs. In this chapter, we'll look at the concepts underlying the package manager and how to use it.
+## 10.1. Modules, Targets, Products, and Packages
 
-## 10.1. Introduction
+SwiftPM organizes code at four levels, and keeping them distinct makes everything else easier to follow.
 
-The purpose of any module system is to make the design and maintenance of large programs practical by grouping related features together into units that can be easily understood and changed, independent of the other parts of the program. This *modularity* allows modules to be shared and reused by different projects, distributed within an organization, or made available to the wider world.
+A **module** is the unit of compilation and of naming. It's a group of Swift source files compiled together; within a module, every file sees every other file's declarations without imports. Each module is also a namespace: two modules can each declare a type called `Parser` without conflict, and clients can tell them apart as `Expressions.Parser` and `Markdown.Parser`. `Foundation`, `NIOCore`, and the `Distance` library of Section 2.6 are modules.
 
-Swift's terminology distinguishes three levels:
+A **target** is SwiftPM's recipe for building one module, or a test suite, or a plug-in. It records where the target's source files are, which other targets and products it depends on, and any special build settings.
 
-- A *module* is a unit of code distribution and of namespacing: a set of Swift source files that are compiled together, whose declarations share a namespace, and which other modules can `import`. `Foundation`, `NIOCore`, and `Distance` are modules.
-- A *target* is SwiftPM's description of how to build one module (or a test bundle, or a plugin): its source directory, its dependencies, and its build settings.
-- A *package* is a unit of *versioning* and *distribution*: a directory, usually a Git repository, containing a `Package.swift` manifest that declares one or more targets, and the *products* (libraries and executables) that it makes available to other packages.
+A **product** is something a package makes available to the outside world: a *library*, which other packages can depend on, or an *executable*, which users can run. A product is built from one or more targets. Targets that belong to no product are private to their package.
 
-Each module provides a separate namespace for its declarations, so that a name declared in one module doesn't collide with the same name in another. Each module also provides an *encapsulation* boundary: by controlling which declarations are visible outside the module with access levels, a module's author can hide implementation details, so that clients depend only on the module's public interface.
+A **package** is the unit of versioning and distribution: a directory, usually a Git repository, whose `Package.swift` manifest declares the package's targets, products, and dependencies. Packages are what get released, tagged with version numbers, and depended on.
 
-Swift's module system has a different emphasis from Go's. Go's packages are small and numerous, and a Go program typically imports dozens of them, each identified by an import path. In Swift, modules tend to be larger, with a single module often corresponding to what Go would spread across several packages, and the code within a module is not further subdivided into namespaces except by types. A Swift package with three or four targets is typical; one with forty would be unusual.
+So a package such as `swift-argument-parser` contains several targets, among them the library module `ArgumentParser`, and exposes that module as a product of the same name. Your package depends on the *package*, and your target depends on the *product*.
 
-Compilation speed is a concern for every large project, and Swift is not as fast to compile as Go. Swift's rich type inference and generics give the compiler more to do. The module system helps. Each module is compiled into a *module interface* that records the types and signatures of its public declarations, so modules that depend on it can be compiled without reparsing its source. And the build system compiles independent modules in parallel, and recompiles only the files affected by a change. Breaking a large module into smaller ones along natural boundaries often speeds up incremental builds.
+How large should a module be? Swift modules tend to be larger and fewer than the packages or namespaces of some other languages. A module is a natural unit of encapsulation, since its `internal` declarations are invisible outside it, and also a unit of compilation: the compiler type-checks a module as a whole and records its public interface so that dependent modules can be compiled without reparsing its source. A package with three or four modules is typical. Splitting a big module along natural seams can speed up incremental builds, because a change to one module recompiles only the modules that depend on its interface, and independent modules build in parallel.
 
-## 10.2. Package Identity and Dependencies
+## 10.2. Creating and Laying Out a Package
 
-Each package that you depend on is identified by its *location*, usually a Git URL:
-
-```swift
-.package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
-```
-
-The URL is the package's *identity*, and SwiftPM ensures that only one copy of each package is used in a build, even if it's depended on by several other packages. The last path component of the URL, minus `.git`, is used as the package's name in references from targets, as in `.product(name: "ArgumentParser", package: "swift-argument-parser")`.
-
-Packages can also be fetched from a *package registry*, which identifies packages by a scope and name, like `apple.swift-argument-parser`, and serves source archives directly rather than Git repositories. Registries are mostly used inside organizations; public packages are almost always referenced by URL.
-
-### 10.2.1. Versions
-
-Packages are versioned using *semantic versioning*: a version has the form `MAJOR.MINOR.PATCH`, and by convention, the major version is incremented for changes that break the package's API, the minor version for backward-compatible additions, and the patch version for backward-compatible bug fixes. A Git tag such as `1.5.0` marks each release.
-
-A dependency declaration specifies a *requirement*, a range of versions you're willing to accept:
-
-```swift
-.package(url: "...", from: "1.5.0")  // 1.5.0 ..< 2.0.0 (the usual choice)
-.package(url: "...", .upToNextMinor(from: "1.5.0"))  // 1.5.0 ..< 1.6.0
-.package(url: "...", exact: "1.5.2")  // exactly 1.5.2 (avoid)
-.package(url: "...", "1.5.0"..<"1.8.0")  // an explicit range
-.package(url: "...", branch: "main")  // the tip of a branch (for development only)
-.package(url: "...", revision: "a1b2c3d")  // a specific commit
-.package(path: "../distance")  // a local package on disk
-```
-
-When you build, SwiftPM *resolves* the dependency graph: it finds, for every package in the graph, the newest version that satisfies the requirements of every package that depends on it. If no such version exists, because two of your dependencies require incompatible versions of a third, resolution fails and SwiftPM explains the conflict.
-
-The result of resolution is recorded in a file called `Package.resolved`, which lists the exact version and commit of every package in the graph. Subsequent builds use exactly those versions, so builds are reproducible, until you ask for newer ones:
+`swift package init` creates a new package in the current directory. Its `--type` option chooses a template: `library` (the default), `executable`, `tool` (an executable that uses ArgumentParser), `macro` (Section 12.8), `build-tool-plugin`, and others. A library package starts out like this:
 
 ```
-$ swift package resolve          # resolve according to Package.resolved, if present
-$ swift package update           # pick the newest allowed versions and update Package.resolved
-$ swift package update NIOCore   # update just one package
-$ swift package show-dependencies
-.
-├── swift-nio<https://github.com/apple/swift-nio.git@2.86.0>
-│   ├── swift-collections<https://github.com/apple/swift-collections.git@1.2.1>
-│   ├── swift-atomics<https://github.com/apple/swift-atomics.git@1.3.0>
-│   └── swift-system<https://github.com/apple/swift-system.git@1.6.1>
-└── swift-argument-parser<https://github.com/apple/swift-argument-parser.git@1.6.1>
+mylib/
+    Package.swift           the manifest
+    Sources/
+        MyLib/              one directory per target
+            MyLib.swift
+    Tests/
+        MyLibTests/
+            MyLibTests.swift
 ```
 
-(The version numbers you see will differ.) For an application or executable, commit `Package.resolved` to source control, so that everyone builds with the same versions. For a library, it's common not to, since the library's clients will do their own resolution anyway.
+SwiftPM relies on *conventions* to keep manifests short. A target named `X` finds its sources in `Sources/X`, and a test target in `Tests/X`; everything with a `.swift` extension in that directory, including subdirectories, belongs to the target. A target can override the location with `path:`, but sticking to the convention makes packages instantly familiar to other Swift programmers.
 
-SwiftPM requires that a dependency graph contain at most one version of each package. That's simpler than Go's approach, which allows multiple major versions of a module to coexist under different import paths, but it means that package authors must be careful about introducing new major versions, since a client can't use version 1 and version 2 of the same package at once.
+Building creates two more things: a `.build` directory for build products and downloaded dependencies, which shouldn't be committed to source control, and, if the package has dependencies, a `Package.resolved` file recording their exact versions, which often should be (Section 10.4).
+
+```
+$ swift build
+Building for debugging...
+Build complete!
+$ swift test
+...
+```
+
+Each package is self-contained. Its dependencies are checked out under its own `.build` directory, and a shared cache in your home directory avoids downloading the same repository twice. There's no global workspace to configure.
 
 ## 10.3. The Package Manifest
 
-The manifest, `Package.swift`, is a Swift program that constructs a value of type `Package` from the `PackageDescription` module. Because it's ordinary Swift, it can use variables and conditionals, but it should be kept simple and declarative, since tools need to evaluate it quickly. Here is a manifest for a package with a library, an executable that uses it, and tests:
+The manifest, `Package.swift`, is a Swift program. It imports the `PackageDescription` module and creates a value of type `Package` describing the package. Here's a manifest for a package with a library, a command-line tool that uses it, and a test suite:
 
 ```swift
 // swift-tools-version: 6.0
@@ -103,27 +81,35 @@ let package = Package(
 )
 ```
 
-The first line is a special comment that specifies the *tools version*, the minimum version of SwiftPM that can build this package, and also selects the manifest API and default settings. With tools version 6.0 or later, targets are compiled in the Swift 6 language mode by default.
+The comment on the first line isn't optional decoration. It declares the *tools version*: the oldest SwiftPM that can read this manifest, which also determines which manifest APIs are available and which defaults apply. With tools version 6.0 or later, every target compiles in the Swift 6 language mode unless it says otherwise.
 
-`platforms` sets the minimum deployment target for Apple platforms; it has no effect on Linux or Windows. It matters because many APIs, such as `Mutex` and newer Foundation features, are available only on recent versions of Apple's operating systems.
+`platforms` sets the minimum operating-system versions on Apple platforms (it's ignored on Linux and Windows). It matters because many APIs, `Mutex` and recent Foundation features among them, exist only on recent OS releases, and the compiler checks every use against these minimums.
 
-`products` lists what the package makes available to *other* packages. Targets that aren't part of any product are internal to the package. An executable product can be run with `swift run calc`, and a library product can be depended on by name.
+`products` lists what other packages may use. `dependencies` lists the packages this one uses; Section 10.4 covers them in detail. `targets` lists the modules to build and how they depend on each other: a target depends on another target in the same package by name, as `calc` depends on `"Eval"`, and on a product from another package with `.product(name:package:)`.
 
-`targets` lists the modules to build. By convention, the sources of a target named `X` are in `Sources/X` and those of a test target in `Tests/X`; you can override the location with a `path:` argument, but it's better not to. The kinds of target are:
+Since the manifest is Swift, it can use variables, functions, and conditions. Resist the temptation to get clever, though. Tools such as editors and the Swift Package Index evaluate manifests constantly, and a manifest that reads like a plain declaration is easier for people and tools alike.
+
+### 10.3.1. Kinds of Targets
+
+Besides ordinary library targets, SwiftPM supports several specialized kinds:
 
 ```
 .target                 a library module
-.executableTarget       a module that builds an executable (has main.swift or @main)
-.testTarget             a module of tests, run by swift test
-.macro                  a compiler plug-in implementing macros (Chapter 12)
-.plugin                 a SwiftPM plug-in: a build tool or a command
-.systemLibrary          a module map exposing a C library installed on the system (Chapter 13)
-.binaryTarget           a prebuilt XCFramework or artifact bundle
+.executableTarget       a module that builds a program (has main.swift or an @main type)
+.testTarget             a test suite, run by swift test (Chapter 11)
+.macro                  a compiler plug-in that implements macros (Section 12.8)
+.plugin                 a SwiftPM plug-in: a build tool or a custom command (Section 10.7)
+.systemLibrary          a module map for a C library installed on the system (Section 13.4)
+.binaryTarget           a prebuilt framework or artifact bundle
 ```
 
-A target may contain C, C++, or Objective-C sources instead of Swift, in which case its public headers go in an `include` directory and are exposed to Swift as a module automatically. A target may also include *resources* (images, data files, localized strings) declared with `resources: [.process("Resources")]`, which are accessed at run time through the generated `Bundle.module`.
+A library target may also contain C, C++, or Objective-C instead of Swift. Its public headers go in an `include` directory, and Swift targets that depend on it can import it like any other module.
 
-Each target can specify build settings:
+A target can carry *resources*, such as images, data files, or localized strings, declared with `resources: [.process("Resources")]` and found at run time through the generated `Bundle.module`.
+
+### 10.3.2. Build Settings
+
+Targets can adjust how they're compiled:
 
 ```swift
 .target(
@@ -137,11 +123,11 @@ Each target can specify build settings:
 )
 ```
 
-`.define` sets a compilation condition that can be tested with `#if ENABLE_TRACING`. `.unsafeFlags` passes arbitrary flags to the compiler, and for safety, SwiftPM refuses to build a package that uses them when it's a dependency of another package.
+`.swiftLanguageMode` lets a target stay in an older language mode while it's migrated, as Section 9.6 described. `.enableUpcomingFeature` opts in early to behavior planned for a future language mode. `.define` sets a *compilation condition* that code can test with `#if ENABLE_TRACING`, here only in debug builds. `.unsafeFlags` passes arbitrary compiler flags; because such flags could do anything, SwiftPM refuses to build a package that uses them when it's someone else's dependency.
 
-### 10.3.1. Platform-Specific Code
+### 10.3.3. Platform-Specific Code
 
-Swift has no equivalent of Go's file-name conventions (`_linux.go`) or build tags; instead, code that differs by platform is written with *conditional compilation* blocks:
+Code that must differ from one platform to another is written with *conditional compilation*, choosing among alternatives at compile time:
 
 ```swift
 #if os(Linux)
@@ -153,7 +139,7 @@ import Darwin
 #endif
 
 #if arch(arm64)
-// ...
+// ...a path optimized for 64-bit ARM...
 #endif
 
 #if DEBUG
@@ -161,9 +147,9 @@ print("debug build")
 #endif
 ```
 
-The conditions `os()`, `arch()`, `canImport()`, `compiler(>=6.0)`, `swift(>=6.0)`, `targetEnvironment(simulator)`, and `hasFeature()` cover most needs. Code in an inactive `#if` block is parsed but not type-checked, so it can refer to APIs that don't exist on the current platform.
+The available conditions include `os()`, `arch()`, `canImport()`, `compiler(>=6.0)`, `swift(>=6.0)`, `targetEnvironment(simulator)`, and `hasFeature()`, plus any names defined with `.define`. Code in an inactive branch is parsed but not type-checked, so it may refer to APIs that don't exist on the current platform. Prefer `canImport` to `os` where possible: it asks about the capability you actually need rather than assuming which platforms have it.
 
-Dependencies can be made conditional too, so that a target uses a library only on the platforms that need it:
+Dependencies can be conditional too, so that a target links a library only where it's needed:
 
 ```swift
 .target(
@@ -175,9 +161,80 @@ Dependencies can be made conditional too, so that a target uses a library only o
 )
 ```
 
-## 10.4. Import Declarations
+## 10.4. Depending on Other Packages
 
-A Swift source file may contain any number of `import` declarations, which must appear before any other declarations. Each one names a module:
+A dependency names a package by its location, most often a Git repository URL, and states which versions are acceptable:
+
+```swift
+.package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
+```
+
+The URL is the package's *identity*. Within one build, each identity appears once, however many packages depend on it. The last component of the URL, minus `.git`, is the name a target uses to refer to the package, as in `.product(name: "ArgumentParser", package: "swift-argument-parser")`. Organizations can also run a *package registry*, which identifies packages by scope and name (such as `apple.swift-argument-parser`) and serves release archives instead of Git repositories; public open-source packages are almost always referenced by URL.
+
+### 10.4.1. Version Requirements
+
+Packages are versioned with *semantic versioning*, `MAJOR.MINOR.PATCH`, marked by Git tags such as `1.5.0`. The convention is that a new major version may break clients, a new minor version adds features compatibly, and a new patch version fixes bugs compatibly. A dependency's *requirement* is the range of versions you accept:
+
+```swift
+.package(url: "...", from: "1.5.0")  // 1.5.0 ..< 2.0.0 (the usual choice)
+.package(url: "...", .upToNextMinor(from: "1.5.0"))  // 1.5.0 ..< 1.6.0
+.package(url: "...", exact: "1.5.2")  // exactly 1.5.2 (avoid: it blocks bug fixes)
+.package(url: "...", "1.5.0"..<"1.8.0")  // an explicit range
+.package(url: "...", branch: "main")  // the latest commit on a branch (development only)
+.package(url: "...", revision: "a1b2c3d")  // one particular commit
+.package(path: "../distance")  // a package in a local directory
+```
+
+`from:` is the right default for most dependencies: it trusts the package to follow semantic versioning, accepting fixes and features while ruling out the next major version. Branch and revision dependencies are useful while two packages are developed together, but a package that depends on one can't itself be released as a versioned dependency of others.
+
+### 10.4.2. Resolution and `Package.resolved`
+
+Before building, SwiftPM *resolves* the full graph of dependencies, choosing one version of each package that satisfies the requirements of every package that depends on it, preferring the newest such version. If no single version works (say, your two dependencies require `2.x` and `3.x` of a third package), resolution fails, and SwiftPM explains which requirements conflict. A graph can contain only one version of each package, so the authors of widely used packages have a strong incentive to avoid major-version churn.
+
+The outcome is recorded in `Package.resolved`, which lists the exact version and commit chosen for every package in the graph. Later builds use exactly those versions, so a build is reproducible, until you explicitly ask for newer ones:
+
+```
+$ swift package resolve          # fetch what Package.resolved specifies
+$ swift package update           # choose the newest allowed versions and rewrite Package.resolved
+$ swift package update swift-nio # update only one package
+$ swift package show-dependencies
+.
+├── swift-nio<https://github.com/apple/swift-nio.git@2.86.0>
+│   ├── swift-collections<https://github.com/apple/swift-collections.git@1.2.1>
+│   ├── swift-atomics<https://github.com/apple/swift-atomics.git@1.3.0>
+│   └── swift-system<https://github.com/apple/swift-system.git@1.6.1>
+└── swift-argument-parser<https://github.com/apple/swift-argument-parser.git@1.6.1>
+```
+
+(Your versions will differ.) Applications and tools should commit `Package.resolved`, so that every developer and every CI run builds against the same code. Libraries often don't, because their clients resolve the whole graph themselves and ignore a dependency's `Package.resolved` anyway.
+
+### 10.4.3. Working on a Dependency
+
+Sometimes you need to change a dependency, to debug it or try a fix before it's released. `swift package edit swift-nio` checks out an editable copy in a `Packages` directory inside your package, and builds use that copy until `swift package unedit swift-nio` restores the released version. For longer-term arrangements, a `.package(path:)` dependency, or a *mirror* configured with `swift package config set-mirror`, points SwiftPM at a different copy of a package without changing its identity.
+
+## 10.5. Access Levels Across Modules
+
+Section 6.6 introduced Swift's access levels. Several of them exist specifically to manage the boundaries between modules.
+
+`internal`, the default, keeps a declaration within its module. Most declarations should stay `internal`; a module's public surface should be a deliberate choice, not an accident.
+
+`public` makes a declaration available to other modules. Making a type public doesn't make its members public: each property, method, and initializer that clients should see must be marked too. In particular, the memberwise initializer that the compiler writes for a struct is always `internal`, so a public struct that clients should be able to create needs a public initializer written out, as `Kilometers` had in Section 2.6.
+
+`package` (Swift 5.9) makes a declaration visible to every module in the same package, but not to other packages. It's how a package's modules share helpers without making them part of the package's public interface. For example, a package with modules `HTTPCore`, `HTTPClient`, and `HTTPServer` can keep its shared parsing code `package`-visible in `HTTPCore`.
+
+`open` applies to classes and their members. A `public` class can be used, but not subclassed, outside its module, and its `public` methods can't be overridden there. `open` permits both. Designing a class to be safely subclassed by strangers is hard, so Swift makes it an explicit decision.
+
+### 10.5.1. Inlining and Library Evolution
+
+Ordinarily, the optimizer can't see inside other modules. A call to a public function in another module is a real call, and a generic function from another module can't be specialized for the caller's types. For performance-critical code, `@inlinable` publishes a function's *body* as part of its module's interface, so that it can be inlined and specialized in client modules. The standard library marks most of its generic algorithms `@inlinable`, which is how `map` and `sort` can be as fast as hand-written loops.
+
+The cost is commitment: an inlinable body becomes part of the module's public contract, since clients compiled against one version keep using its old body even after the module changes. An `@inlinable` function may refer only to `public` declarations and to `internal` ones marked `@usableFromInline`.
+
+This matters most for libraries shipped as binaries and updated separately from the programs that use them, such as Apple's system frameworks. Those are built with *library evolution* enabled, which lets them add stored properties to structs and cases to enums without breaking already-compiled clients, at some cost in performance; types whose layout will never change can be marked `@frozen` to recover it. Ordinary source packages, which are always compiled together with their clients, leave library evolution off, and none of this applies.
+
+## 10.6. Imports and Module Interfaces
+
+A source file uses another module by importing it. Imports come before other declarations, and each names a module:
 
 ```swift
 import Foundation
@@ -185,87 +242,50 @@ import NIOCore
 import Distance
 ```
 
-An `import` makes all the public declarations of the module visible in the file, unqualified. If two imported modules declare the same name, the ambiguity must be resolved where the name is used, by qualifying it with the module name:
+An import makes the module's public declarations available throughout the file, without qualification. It's an error to import a module that the file's target doesn't depend on in the manifest. And imports are per file: importing `Foundation` in one file doesn't make it available in the module's other files.
+
+If two imported modules declare the same name, uses of that name must be qualified with the module, as in `Foundation.Data` or `SystemPackage.FilePath`. Swift can't rename a module on import, but collisions are uncommon in practice, because Swift names are written to stand on their own (Section 10.6.2).
+
+### 10.6.1. Kinds of Import
+
+Several variations on `import` are worth knowing.
+
+*Access-level imports* (Swift 6) say whether a dependency is part of the module's public interface. A plain `import` is effectively `public`: the module's public declarations may mention the imported module's types. Writing `internal import` (or `private import`) declares the dependency an implementation detail, and the compiler checks that none of its types leak into public declarations:
 
 ```swift
-import Foundation
-import SystemPackage
-
-let p1 = FilePath("/tmp")  // SystemPackage.FilePath
-let d = Foundation.Data()  // explicitly qualified
+internal import SwiftSoup  // used inside the module, but never in its public API
+public import Foundation  // our public API mentions URL and Date
 ```
 
-Unlike Go, Swift has no way to rename a module on import. In practice, name conflicts between modules are rare, because Swift names are more descriptive than Go's (types are not usually named after their package), and module qualification resolves those that occur.
+That keeps an implementation dependency replaceable without breaking clients, and lets the build system skip recompiling clients when it changes. The upcoming feature `InternalImportsByDefault` makes `internal` the default for every import that doesn't say otherwise.
 
-### 10.4.1. Import Variants
+*Scoped imports* bring in a single declaration, as in `import struct Foundation.URL`. They document a narrow dependency, but they still make the module's extensions and operators visible, so they're less precise than they look.
 
-A few variations on `import` are worth knowing.
+`@testable import` gives a test target access to a module's `internal` declarations (Section 11.1). It works only for modules built with testing enabled, as debug builds are.
 
-*Scoped imports* import a single declaration: `import struct Foundation.URL` or `import func Darwin.sqrt`. They're occasionally used to make a dependency explicit, but in practice they still make the module's extensions and operators visible, so they're less precise than they appear.
+`@preconcurrency import` suppresses concurrency diagnostics about types from a module that hasn't yet adopted `Sendable` annotations, a tool for migrating to Swift 6.
 
-*Access-level imports* (Swift 6) control whether a dependency is part of your module's public interface. By default, every import is effectively `public`, meaning that clients of your module may see types from it in your API. Marking an import `internal` or `private` declares that the dependency is an implementation detail, and the compiler checks that none of its types appear in your public declarations:
+Importing a module never runs code. Swift has no module initializers: as Section 2.6.2 explained, global variables are initialized lazily on first use, so nothing happens merely because a module is imported or linked. A library that needs callers to register plug-ins, decoders, or drivers asks for that explicitly, typically by taking a list of types or values that conform to a protocol:
 
 ```swift
-internal import SwiftSoup  // our public API doesn't mention SwiftSoup's types
-public import Foundation  // our public API uses Date and URL
+let image = try decodeImage(data, using: [PNGDecoder.self, JPEGDecoder.self])
 ```
 
-This makes it possible to replace an implementation dependency without breaking clients, and it lets the build system avoid recompiling clients when the dependency changes. The upcoming-feature flag `InternalImportsByDefault` reverses the default, making every import `internal` unless marked `public`, and is likely to become the default in a future language mode.
+That keeps a program's capabilities visible in its source rather than depending on which modules happen to be linked.
 
-`@testable import` makes a module's `internal` declarations visible, as if they were `public`. It's allowed only in test targets, and only when the module was built with testing enabled (as debug builds are). We'll use it in Chapter 11.
+### 10.6.2. Naming within Modules
 
-`@preconcurrency import` suppresses `Sendable`-related diagnostics for types from a module that hasn't yet adopted Swift's concurrency annotations. It's a migration aid.
+Module names use `UpperCamelCase`, like types: `Foundation`, `ArgumentParser`, `NIOCore`. Package names, which name repositories, are conventionally lowercase with hyphens, such as `swift-argument-parser`, and a package's main module usually takes its name without the `swift-` prefix.
 
-### 10.4.2. No Side-Effect Imports
+Because imports are unqualified, a Swift name appears in client code *without* its module as context: after `import Foundation`, code writes `URL`, not `Foundation.URL`. So names must make sense on their own. A JSON library's encoder should be called `JSONEncoder`, not just `Encoder`, since `Encoder` alone is what clients would see. Within a type, on the other hand, the type provides the context, so members shouldn't repeat it: `array.count`, not `array.arrayCount`; `url.host`, not `url.urlHost`.
 
-Go has *blank imports*, `import _ "image/png"`, which import a package only for the side effects of its initialization, typically to register a decoder or driver with some central registry. Swift has nothing equivalent, because, as we saw in Section 2.6, Swift modules have no initialization code: global variables are initialized lazily, on first use, and nothing runs merely because a module is imported or linked.
+Choose module names that say what the module is for, like `Links` or `Distance`. Names such as `Utilities`, `Common`, or `Helpers` say nothing, and modules with such names tend to collect unrelated code until nobody can say what they're for.
 
-Swift libraries therefore use explicit registration, or avoid registries altogether. Rather than registering image decoders by import, a Swift API would take a list of decoder types, or define a protocol and let the caller pass a value that conforms to it:
-
-```swift
-let decoders: [any ImageDecoder.Type] = [PNGDecoder.self, JPEGDecoder.self, GIFDecoder.self]
-let image = try decodeImage(data, using: decoders)
-```
-
-This is more verbose than a blank import, but it makes the program's dependencies visible in its code, and it means that whether a format is supported doesn't depend on what some other file happened to import.
-
-## 10.5. Access Levels Across Modules
-
-Section 6.6 introduced Swift's access levels. Several of them matter specifically at module boundaries.
-
-`internal` (the default) hides a declaration from other modules. Most declarations in a module should stay `internal`.
-
-`public` exposes a declaration to other modules. A public type's members are still `internal` unless they're marked `public` individually, and a public struct's memberwise initializer is always `internal`, so you must write a public one by hand. This deliberate friction makes you choose your public interface.
-
-`package` (Swift 5.9) exposes a declaration to the other modules *of the same package*, but not to clients outside it. It serves the role of Go's `internal` directories: shared implementation details among a package's own targets. For example, a package with modules `HTTPCore`, `HTTPClient`, and `HTTPServer` can share helpers declared `package` in `HTTPCore` without making them part of the package's API.
-
-`open` applies to classes and their members. A `public` class can be used by other modules but not subclassed by them, and a `public` method can't be overridden. `open` allows both. Since designing a class for subclassing by strangers is hard, Swift makes it opt-in.
-
-### 10.5.1. Inlining and Library Evolution
-
-Normally, the optimizer can't see into other modules: a call to a public function in another module is a real call, and a generic function in another module can't be specialized for the caller's types. For performance-critical code, the attribute `@inlinable` exposes a function's *body* as part of the module's interface, allowing it to be inlined and specialized across module boundaries. Most of the standard library is `@inlinable`, which is why generic algorithms like `map` and `sort` are as fast as hand-written loops.
-
-`@inlinable` has a cost: the function body becomes part of the module's public contract, since clients compiled against one version will keep using its old body even after the library is updated. An `@inlinable` function may use only `public` declarations and `internal` ones marked `@usableFromInline`.
-
-That concern matters most for libraries that are distributed in binary form and updated independently of their clients, like Apple's system frameworks. Such libraries are compiled with *library evolution* enabled, which makes it possible to add stored properties to structs, cases to enums, and so on, without recompiling clients, at some cost in performance. Types whose layout will never change can be marked `@frozen` to recover that performance. For source packages, which are always compiled together with their clients, library evolution is off, and none of this is a concern.
-
-## 10.6. Modules and Naming
-
-In this section, we'll offer some advice on how to follow Swift's distinctive conventions for naming modules and their members.
-
-Module names are `UpperCamelCase`, like type names: `Foundation`, `ArgumentParser`, `NIOCore`. Package names, which identify repositories, are conventionally lowercase with hyphens: `swift-argument-parser`, `swift-nio`. A package's main module usually takes the package name minus the `swift-` prefix, in `UpperCamelCase`.
-
-Because Swift imports are unqualified (after `import Foundation`, you write `URL`, not `Foundation.URL`), names in Swift must be meaningful on their own, without the module name as context. This is the opposite of Go's convention, in which a package's name is part of every reference to its members, so that `bytes.Buffer`, `http.Get`, and `json.Marshal` are short because the package name provides context. In Swift, the corresponding names are longer and self-describing: `Data`, `URLSession.data(from:)`, `JSONEncoder.encode(_:)`. A Swift module named `JSON` should not have a type called `Encoder`; it should be `JSONEncoder`, since that's how it will appear in client code.
-
-Within a type, the opposite applies: don't repeat the type's name in its members. It's `array.count`, not `array.arrayCount`; `URL.host`, not `URL.urlHost`. Context provided by the type is always visible at the call site.
-
-Avoid generic module names like `Utils`, `Common`, or `Helpers`, which say nothing about what's inside and tend to accumulate unrelated code. Prefer names that describe a coherent purpose, like `Links` or `Distance`.
-
-The API Design Guidelines, which we've referred to throughout the book, apply with special force to public APIs, which will be read by many people who didn't write them. Use argument labels to make calls read naturally. Name methods according to their side effects. Document every public declaration with a `///` comment. And strive for clarity at the point of use, which is, in the end, what all of these conventions are for.
+For a module's public API, the API Design Guidelines (Section 2.1) apply with extra force, since its users won't have its source in front of them. Choose argument labels that make calls read naturally, name methods by their effects, document every public declaration (Section 10.7.3), and aim above all for clarity at the point of use.
 
 ## 10.7. The `swift` Tool
 
-The rest of this chapter concerns the `swift` command, which is used for building, running, testing, and managing packages. It's actually a driver for a set of subcommands:
+A single command, `swift`, runs most of the toolchain:
 
 ```
 $ swift --help
@@ -281,30 +301,9 @@ SUBCOMMANDS:
 ...
 ```
 
-### 10.7.1. Package Layout
+### 10.7.1. Building and Running
 
-To create a new package, run `swift package init` in an empty directory. Its `--type` option selects a template: `library` (the default), `executable`, `tool` (an executable using ArgumentParser), `macro`, or `build-tool-plugin`. The resulting layout follows these conventions:
-
-```
-mypackage/
-    Package.swift           the manifest
-    Package.resolved        the resolved versions of dependencies
-    Sources/
-        MyLibrary/          one directory per target
-            MyLibrary.swift
-        mytool/
-            main.swift
-    Tests/
-        MyLibraryTests/
-            MyLibraryTests.swift
-    .build/                 build products and checked-out dependencies (don't commit)
-```
-
-Unlike Go before modules, with its single `GOPATH` workspace, every Swift package is self-contained. Dependencies are checked out inside each package's `.build/checkouts` directory, and a cache in your home directory avoids downloading the same repository twice.
-
-### 10.7.2. Building Packages
-
-`swift build` compiles every target in the package and its dependencies. By default, it builds in the *debug* configuration, which compiles quickly, keeps run-time assertions, and includes full debugging information. `swift build -c release` builds with optimization:
+`swift build` builds every target in the package and its dependencies. By default it uses the *debug* configuration, which compiles quickly, keeps all run-time checks and assertions, and includes full debugging information. `-c release` builds with optimization, which can make compute-heavy programs many times faster:
 
 ```
 $ swift build
@@ -314,37 +313,37 @@ Build complete! (4.21s)
 $ swift build -c release
 Building for production...
 Build complete! (38.66s)
-$ ls .build/release/calc
-.build/release/calc
 ```
 
-Build products go in `.build/debug` or `.build/release`. `swift run` builds and then runs an executable product, passing any further arguments to it:
+Products land in `.build/debug` or `.build/release`. `swift run` builds an executable product and runs it, passing along any arguments after the product name; `swift build --product calc` or `--target Eval` builds just part of the package:
 
 ```
-$ swift run calc -- "sqrt(2)"
-1.4142135623730951
+$ swift run calc
+sqrt(2)
+1.414213562
 ```
 
-`swift build --product calc` builds just one product and its dependencies, and `--target` builds one target.
+### 10.7.2. Building for Distribution
 
-To produce an executable that runs on other machines, add `--static-swift-stdlib` to link the Swift runtime statically. On Linux, the *Static Linux SDK* goes further, producing fully static executables, with no dependencies on any shared libraries, that run on any Linux distribution:
+An executable built normally depends on the Swift runtime libraries being installed on the machine that runs it. `--static-swift-stdlib` links them into the executable instead. On Linux, the *Static Linux SDK* goes further and produces fully static executables, depending on no shared libraries at all, that run on any distribution:
 
 ```
 $ swift sdk install <URL of the static Linux SDK bundle>
 $ swift build -c release --swift-sdk x86_64-swift-linux-musl
 ```
 
-The same mechanism, Swift SDKs, supports cross-compilation to other platforms, such as compiling on macOS for Linux, or for WebAssembly.
+The same *Swift SDK* mechanism supports cross-compilation, such as building Linux or WebAssembly binaries on a Mac.
 
 ### 10.7.3. Documenting Packages
 
-Swift style strongly encourages good documentation of package APIs. Each public declaration should be immediately preceded by a documentation comment. Documentation comments start with `///` (or `/** ... */`) and are written in Markdown. The first paragraph is a summary, and subsequent paragraphs give the details. Special list items document parameters, return values, and errors:
+A package's public API should be documented, and Swift's conventions make that easy to do well. A *documentation comment*, written with `///` (or `/** ... */`), goes immediately before the declaration it describes. It's written in Markdown. Its first paragraph is a one-sentence summary, which editors show in completion lists; later paragraphs give details; and special list items describe parameters, results, and errors:
 
 ```swift
 /// Parses the input string as an arithmetic expression.
 ///
 /// The grammar supports the four arithmetic operators, unary `+` and `-`,
-/// parentheses, numeric literals, variables, and calls to `pow`, `sin`, and `sqrt`.
+/// parentheses, numeric literals, variables, and calls to `min`, `max`,
+/// `abs`, and `sqrt`.
 ///
 /// - Parameter input: The text of the expression.
 /// - Returns: The syntax tree of the expression.
@@ -352,24 +351,24 @@ Swift style strongly encourages good documentation of package APIs. Each public 
 public func parse(_ input: String) throws(SyntaxError) -> Expr
 ```
 
-Double backticks, as in ``` ``SyntaxError`` ```, create a link to another symbol. Your editor shows these comments when you hover over a symbol, and *DocC*, the Swift documentation compiler, turns them into a browsable web site, with articles and tutorials written in separate Markdown files alongside the code. With the `swift-docc-plugin` package added as a dependency:
+A name in double backticks, like ``` ``SyntaxError`` ```, becomes a link to that symbol's documentation. Editors display these comments when you hover over or complete a name, and *DocC*, the documentation compiler, turns them into a browsable site, which can also include articles and step-by-step tutorials written in Markdown alongside the code. With the `swift-docc-plugin` package added as a dependency:
 
 ```
 $ swift package generate-documentation --target Eval
 $ swift package --disable-sandbox preview-documentation --target Eval
 ```
 
-The Swift Package Index builds and hosts DocC documentation for every package it lists.
+The Swift Package Index builds and hosts DocC documentation for the packages it lists.
 
 ### 10.7.4. Formatting and Plug-ins
 
-`swift format` formats Swift source code according to a configurable style, and `swift format lint` reports style violations without changing anything. A `.swift-format` file in the package directory configures the style; without one, the defaults are used.
+`swift format` reformats source files into a consistent style, and `swift format lint` reports deviations without changing anything, which suits CI. A `.swift-format` file in the package configures the style.
 
-SwiftPM can be extended with *plug-ins*, which are themselves Swift packages. A *command plug-in* adds a subcommand to `swift package`, like the DocC plug-in's `generate-documentation`. A *build tool plug-in* runs during the build to generate source code, for example to compile Protocol Buffers definitions into Swift or to embed version information. Plug-ins run in a sandbox, with no network access and write access only to designated directories, unless the user explicitly grants more.
+SwiftPM can be extended with *plug-ins*, which are themselves packages. A *command plug-in* adds a subcommand to `swift package`, as the DocC plug-in adds `generate-documentation`. A *build-tool plug-in* runs during builds to generate code, for instance compiling Protocol Buffers definitions to Swift, or embedding a version number. Plug-ins run in a sandbox, without network access and with write access only to designated directories, unless the user grants more.
 
-### 10.7.5. Querying Packages
+### 10.7.5. Inspecting Packages
 
-`swift package describe` prints a summary of the package's targets and products, and with `--type json`, produces machine-readable output suitable for tools:
+Several commands report on a package's structure, which is useful for tools and scripts as well as people. `swift package describe` summarizes targets, products, and dependencies, and `--type json` produces the same information as JSON:
 
 ```
 $ swift package describe
@@ -393,18 +392,14 @@ Products:
 ...
 ```
 
-`swift package dump-package` prints the evaluated manifest as JSON, and `swift package show-dependencies --format dot` produces a dependency graph that can be rendered with Graphviz.
+`swift package dump-package` prints the fully evaluated manifest as JSON, and `swift package show-dependencies --format dot` writes the dependency graph in a form that Graphviz can draw.
 
-### 10.7.6. Editing Dependencies
+The next chapter turns to one more subcommand, `swift test`.
 
-Sometimes you need to make a change to a dependency, to debug it or to try a fix before it's released. `swift package edit` checks out a dependency into a `Packages/` directory in your package, where you can modify it freely; the build uses your edited copy until you run `swift package unedit`. For a dependency that you're developing at the same time as your own package, a `.package(path:)` dependency, or a dependency *mirror* configured with `swift package config set-mirror`, achieves the same thing more permanently.
+**Exercise 10.1:** Create a package with three targets, `Core`, `CLI`, and `Server`, where `CLI` and `Server` depend on `Core`. Give `Core` a helper function with `package` access, and confirm that both other targets can use it but that a separate package depending on yours can't.
 
-In this chapter, we've explained how to use the `swift` tool's most important features for packages. In the next chapter, we'll see how it's used for testing.
+**Exercise 10.2:** Write a tool that reads the output of `swift package show-dependencies --format json` and lists every package in the graph along with how many other packages depend on it.
 
-**Exercise 10.1:** Create a package with three targets, `Core`, `CLI`, and `Server`, in which `CLI` and `Server` both depend on `Core`. Declare a helper function in `Core` with `package` access, and confirm that it can be used from the other targets but not from a separate package that depends on yours.
+**Exercise 10.3:** Using `swift package describe --type json`, write a tool that reports how many Swift source files and lines of code each target in a package contains.
 
-**Exercise 10.2:** Write a program that reads the JSON output of `swift package show-dependencies --format json` and prints the transitive dependencies of the package, with the number of other packages that depend on each.
-
-**Exercise 10.3:** Using `swift package describe --type json`, write a tool that reports, for each target in a package, how many source files it has and how many lines of Swift they contain.
-
-**Exercise 10.4:** Construct a tool that reports the set of all modules that transitively depend on the modules named by its arguments, within a package's dependency graph.
+**Exercise 10.4:** Change one of the book's library modules to use `internal import` for every dependency that doesn't appear in its public API. Which imports have to stay public, and why?
