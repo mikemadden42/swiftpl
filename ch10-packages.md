@@ -12,7 +12,7 @@ The purpose of any module system is to make the design and maintenance of large 
 
 Swift's terminology distinguishes three levels:
 
-- A *module* is a unit of code distribution and of namespacing: a set of Swift source files that are compiled together, whose declarations share a namespace, and which other modules can `import`. `Foundation`, `NIOCore`, and `TempConv` are modules.
+- A *module* is a unit of code distribution and of namespacing: a set of Swift source files that are compiled together, whose declarations share a namespace, and which other modules can `import`. `Foundation`, `NIOCore`, and `Distance` are modules.
 - A *target* is SwiftPM's description of how to build one module (or a test bundle, or a plugin): its source directory, its dependencies, and its build settings.
 - A *package* is a unit of *versioning* and *distribution*: a directory, usually a Git repository, containing a `Package.swift` manifest that declares one or more targets, and the *products* (libraries and executables) that it makes available to other packages.
 
@@ -47,7 +47,7 @@ A dependency declaration specifies a *requirement*, a range of versions you're w
 .package(url: "...", "1.5.0"..<"1.8.0")  // an explicit range
 .package(url: "...", branch: "main")  // the tip of a branch (for development only)
 .package(url: "...", revision: "a1b2c3d")  // a specific commit
-.package(path: "../TempConv")  // a local package on disk
+.package(path: "../distance")  // a local package on disk
 ```
 
 When you build, SwiftPM *resolves* the dependency graph: it finds, for every package in the graph, the newest version that satisfies the requirements of every package that depends on it. If no such version exists, because two of your dependencies require incompatible versions of a third, resolution fails and SwiftPM explains the conflict.
@@ -182,7 +182,7 @@ A Swift source file may contain any number of `import` declarations, which must 
 ```swift
 import Foundation
 import NIOCore
-import TempConv
+import Distance
 ```
 
 An `import` makes all the public declarations of the module visible in the file, unqualified. If two imported modules declare the same name, the ambiguity must be resolved where the name is used, by qualifying it with the module name:
@@ -259,7 +259,7 @@ Because Swift imports are unqualified (after `import Foundation`, you write `URL
 
 Within a type, the opposite applies: don't repeat the type's name in its members. It's `array.count`, not `array.arrayCount`; `URL.host`, not `URL.urlHost`. Context provided by the type is always visible at the call site.
 
-Avoid generic module names like `Utils`, `Common`, or `Helpers`, which say nothing about what's inside and tend to accumulate unrelated code. Prefer names that describe a coherent purpose, like `Links` or `TempConv`.
+Avoid generic module names like `Utils`, `Common`, or `Helpers`, which say nothing about what's inside and tend to accumulate unrelated code. Prefer names that describe a coherent purpose, like `Links` or `Distance`.
 
 The API Design Guidelines, which we've referred to throughout the book, apply with special force to public APIs, which will be read by many people who didn't write them. Use argument labels to make calls read naturally. Name methods according to their side effects. Document every public declaration with a `///` comment. And strive for clarity at the point of use, which is, in the end, what all of these conventions are for.
 

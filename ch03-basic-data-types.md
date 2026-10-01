@@ -108,7 +108,7 @@ print(permissions(mode ^ 0o111))  // "rw-r--r-x": toggle every execute bit
 print(permissions(0o777 & ~0o022))  // "rwxr-xr-x": apply the common umask 022
 ```
 
-`|` sets bits, `&` combined with `~` clears them, and `^` flips them. For sets of a few named flags, the `OptionSet` protocol of Section 3.6 wraps exactly these operations in a friendlier interface, and Section 6.5 builds a bit-vector set that can hold large numbers.
+`|` sets bits, `&` combined with `~` clears them, and `^` flips them. For sets of a few named flags, the `OptionSet` protocol of Section 3.6 wraps exactly these operations in a friendlier interface.
 
 In `x << n` and `x >> n`, `n` gives the number of positions to shift. Swift's shifts are *smart shifts*: a shift by more than the type's width yields 0 (or −1, for a right shift of a negative number), and a negative shift amount shifts the other way, instead of being undefined as in C. The shift amount may be any integer type. When the last bit of speed matters, the *masking shifts* `&<<` and `&>>` behave like the hardware, using only the low bits of the shift amount.
 
@@ -702,7 +702,7 @@ let x = 1 << 70  // 0: an Int smart-shifted past its width
 let y = 9_223_372_036_854_775_807 + 1  // compile error: arithmetic operation overflows
 ```
 
-User-defined types can opt in to literal syntax. We gave `Celsius` integer and floating-point literals in Section 2.5, and many standard types use the protocols too: an array literal can create a `Set`, and a string literal can create a `Character` or a `Unicode.Scalar`, as we did in Section 3.1.
+User-defined types can opt in to literal syntax. We gave `Kilometers` integer and floating-point literals in Section 2.5, and many standard types use the protocols too: an array literal can create a `Set`, and a string literal can create a `Character` or a `Unicode.Scalar`, as we did in Section 3.1.
 
 Named constants are simply `let` declarations. The optimizer folds simple constant expressions into the code that uses them, so naming a value costs nothing at run time:
 

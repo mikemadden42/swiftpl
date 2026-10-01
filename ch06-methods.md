@@ -1,160 +1,153 @@
 # 6. Methods
 
-Since the early 1990s, object-oriented programming (OOP) has been the dominant programming paradigm in industry and education, and nearly all widely used languages developed since then have included support for it. Swift is no exception.
+A *method* is a function that belongs to a type. Rather than writing `length(of: interval)`, you write `interval.length`; rather than `shift(&interval, by: 2)`, you write `interval.shift(by: 2)`. The difference looks cosmetic, but it changes how code is organized: the operations on a type are grouped with the type, a reader can discover them by typing a dot, and the type's author can keep its representation private while exposing only the operations that keep it valid. That combination of data with the operations that maintain it is the core of what's usually called *object-oriented programming*.
 
-Although there is no universally accepted definition of object-oriented programming, for our purposes, an *object* is simply a value or variable that has methods, and a *method* is a function associated with a particular type. An object-oriented program is one that uses methods to express the properties and operations of each data structure so that clients need not access the object's representation directly.
-
-Swift supports classes with inheritance, in the tradition of Smalltalk, Objective-C, and Java. But you'll find that idiomatic Swift uses classes much less than those languages do. Methods may be declared on structs and enums as well as classes, and most Swift types are structs. Behavior is shared among types not primarily by inheritance but through protocols and extensions, and much of the expressive power of Swift's type system comes from the interplay between value types, methods, and protocols.
-
-In this chapter, we'll show how to define and use methods effectively. We'll also cover two key principles of object-oriented programming, *encapsulation* and *composition*.
+Swift supports object-oriented programming in the classic style, with classes, inheritance, and overriding. But its everyday style differs from Java's or C++'s in two important ways. First, methods aren't reserved for classes: structs and enums have them too, and most Swift types are structs. Second, behavior is shared between types mostly through *protocols* and *extensions* rather than through inheritance. This chapter covers methods and the related ideas of extensions, mutation, composition, and encapsulation. Chapter 7 then takes up protocols.
 
 ## 6.1. Method Declarations
 
-A method is declared inside the body of a type, or in an *extension* of the type. Inside the method, the instance on which it was called is available as `self`. Here's our first example, a method on a simple plane geometry type:
+A method is declared inside a type's body, or in an *extension* of the type, which we'll come to shortly. Within a method, the instance it was called on is available as `self`. Here's a type representing an interval of the real number line, such as a span of time measured in hours, with a few methods:
 
 ```swift
-// swiftpl/ch6/geometry
-import Foundation
+// swiftpl/ch6/interval
+/// An Interval is the closed range of real numbers from lower to upper.
+struct Interval {
+    var lower: Double
+    var upper: Double
 
-struct Point {
-    var x, y: Double
+    /// The length of the interval.
+    var length: Double { upper - lower }
 
-    /// Same thing as distance(_:_:), but as a method of the Point type.
-    func distance(to q: Point) -> Double {
-        hypot(q.x - x, q.y - y)
+    /// Reports whether x lies within the interval.
+    func contains(_ x: Double) -> Bool {
+        lower <= x && x <= upper
+    }
+
+    /// Reports whether the interval shares any point with another.
+    func overlaps(_ other: Interval) -> Bool {
+        lower <= other.upper && other.lower <= upper
     }
 }
-
-/// Traditional function.
-func distance(_ p: Point, _ q: Point) -> Double {
-    hypot(q.x - p.x, q.y - p.y)
-}
 ```
 
-Within a method, the instance's properties and other methods can be used without the `self.` prefix: `x` means `self.x`. You need to write `self` explicitly only to disambiguate, as when a parameter has the same name as a property, and in escaping closures in classes, as we saw in Section 5.6.
+Inside the methods, `lower` and `upper` refer to the instance's properties, short for `self.lower` and `self.upper`. Writing `self.` explicitly is needed only to resolve an ambiguity, such as a parameter with the same name as a property, or in certain closures (Section 5.6.1).
 
-There's no conflict between the two declarations of functions called `distance` above. The first declares a module-level function. The second declares a method of the type `Point`, so its name is really `Point.distance(to:)`.
-
-In a method call, the instance comes before the method name, separated by a dot:
+A method is called with dot syntax, the instance first:
 
 ```swift
-let p = Point(x: 1, y: 2)
-let q = Point(x: 4, y: 6)
-print(distance(p, q))  // "5.0", function call
-print(p.distance(to: q))  // "5.0", method call
+let meeting = Interval(lower: 9, upper: 10.5)
+let lunch = Interval(lower: 12, upper: 13)
+print(meeting.length)  // "1.5"
+print(meeting.contains(10))  // "true"
+print(meeting.overlaps(lunch))  // "false"
 ```
 
-The expression `p.distance(to:)` is called a *selector*, because it selects the appropriate method for the instance `p` of type `Point`. Selectors are also used to select properties of struct types, as in `p.x`. Since methods and properties inhabit the same namespace, declaring a method called `x` in the struct type `Point` would be an error, since it would be ambiguous.
+The expression `meeting.overlaps` *selects* the method `overlaps(_:)` of `Interval` for the instance `meeting`. Properties are selected the same way, and they share a namespace with methods: a type can't have both a property and a method named `length`.
 
-Since each type has its own namespace for methods, we can use the name `distance` for other methods so long as they belong to different types. Let's define a type `Path` that represents a sequence of line segments and give it a `distance` method too. Rather than wrapping an array in a new struct, we'll declare `Path` as a type alias for `[Point]`, and add the method to arrays of points with a *constrained extension*:
+Each type has its own namespace for methods, so different types can each have a method called `contains`, and the compiler picks the right one from the type of the instance. `contains` on an `Interval` and `contains` on an `Array` are unrelated methods that happen to share a name.
+
+### 6.1.1. Extensions
+
+An *extension* adds members to a type after its declaration: methods, computed properties, initializers, subscripts, nested types, and protocol conformances. Extensions can be written in another file, and even in another module. They can extend any type, including ones from the standard library.
+
+Suppose a calendar program keeps the day's meetings in an array of intervals, and needs to know how much of the day is booked. Overlapping meetings mustn't be counted twice: two meetings from 9:00 to 10:00 and 9:30 to 11:00 occupy two hours, not two and a half. That question belongs to *arrays of intervals*, and a *constrained extension* adds a method to exactly those:
 
 ```swift
-/// A Path is a journey connecting the points with straight lines.
-typealias Path = [Point]
-
-extension Array where Element == Point {
-    /// Returns the distance traveled along the path.
-    func distance() -> Double {
-        var sum = 0.0
-        for i in indices.dropFirst() {
-            sum += self[i - 1].distance(to: self[i])
+extension Array where Element == Interval {
+    /// Returns the total length covered by the intervals, counting overlaps once.
+    func coveredLength() -> Double {
+        var total = 0.0
+        var current: Interval? = nil  // the run of overlapping intervals being merged
+        for next in sorted(by: { $0.lower < $1.lower }) {
+            if var run = current, next.lower <= run.upper {
+                run.upper = max(run.upper, next.upper)  // extend the run
+                current = run
+            } else {
+                total += current?.length ?? 0  // close the previous run
+                current = next
+            }
         }
-        return sum
+        return total + (current?.length ?? 0)
     }
 }
-```
 
-An *extension* adds new members to an existing type, which can be one you declared, one from another module, or one from the standard library. The `where` clause restricts this extension to arrays whose elements are `Point`s, so `distance()` is available on `[Point]` but not on `[Int]`. Inside the method, `self` is the array, `indices` is its range of valid indices, and `self[i]` is an element.
-
-This is a key difference from Go. In Go, you can declare methods only on types defined in your own package, so to give a slice of points a method you must declare a new named type `Path`. In Swift, you can extend *any* type, even `Array` and `Int`, with methods, computed properties, initializers, subscripts, nested types, and protocol conformances. The only restrictions are that an extension can't add stored properties (they would change the type's layout) and can't override existing members.
-
-Let's call the new method to compute the perimeter of a right triangle:
-
-```swift
-let perim: Path = [
-    Point(x: 1, y: 1),
-    Point(x: 5, y: 1),
-    Point(x: 5, y: 4),
-    Point(x: 1, y: 1),
+let schedule = [
+    Interval(lower: 9, upper: 10),
+    Interval(lower: 9.5, upper: 11),
+    Interval(lower: 13, upper: 14),
 ]
-print(perim.distance())  // "12.0"
+print(schedule.coveredLength())  // "3.0"
 ```
 
-In the two calls to methods named `distance` above, the compiler determines which function to call based on both the method name and the type of the instance. In the first, `self[i - 1]` has type `Point`, so `Point.distance(to:)` is called; in the second, `perim` has type `[Point]`, so the array method is called.
+The `where` clause limits the extension to arrays whose elements are `Interval`s, so `coveredLength()` is available on `[Interval]` and nowhere else. Inside it, `self` is the array, and `sorted(by:)` is the array's own method. The algorithm sorts the intervals by start time and sweeps through them, merging each into the current *run* if it overlaps and starting a new run otherwise.
 
-Should a value with no arguments be a method or a *computed property*? A computed property is declared with `var` and a body, and looks like a stored property to its users:
+Extending types you don't own is routine in Swift, and it's more flexible than what some languages allow, where methods can be declared only on types defined in the same package or class. The two limits are that an extension can't add *stored* properties, since that would change the type's memory layout, and can't replace a member the type already has.
 
-```swift
-extension Array where Element == Point {
-    var length: Double { distance() }
-}
+### 6.1.2. Properties or Methods?
 
-print(perim.length)  // "12.0"
-```
+`length` is a *computed property*: it's declared with `var` and a body, and it looks like a stored property to its users. `coveredLength()` is a method. The convention for choosing between them is that a computed property should be cheap (roughly constant time), have no side effects, and describe an attribute of the value, like `count`, `isEmpty`, or `description`. Anything that does substantial work, may fail, or changes something should be a method. `coveredLength()` sorts the whole array, so it's a method.
 
-The Swift convention is that a computed property should be cheap (roughly O(1)), have no side effects, and describe a characteristic of the value, like `count`, `isEmpty`, or `description`. Anything that does significant work or has side effects should be a method. By that standard, `distance()`, which walks the whole path, is better as a method.
+### 6.1.3. Static Members
 
-Types can also have *static* members, which belong to the type itself rather than to an instance. We used static constants in Section 2.6; static methods are often used as factory functions:
+Members marked `static` belong to the type itself rather than to any instance. Static constants and static *factory methods*, which construct instances in a particular way, are both common:
 
 ```swift
-extension Point {
-    static let origin = Point(x: 0, y: 0)
+extension Interval {
+    static let unit = Interval(lower: 0, upper: 1)
 
-    static func polar(r: Double, theta: Double) -> Point {
-        Point(x: r * cos(theta), y: r * sin(theta))
+    /// Returns the interval centered on center that extends radius in each direction.
+    static func around(_ center: Double, radius: Double) -> Interval {
+        Interval(lower: center - radius, upper: center + radius)
     }
 }
 
-let p = Point.polar(r: 2, theta: .pi / 2)
-print(p.distance(to: .origin))  // "2.0"
+let tolerance = Interval.around(5, radius: 0.1)
+print(tolerance.contains(5.05))  // "true"
+print(tolerance.overlaps(.unit))  // "false"
 ```
 
-Notice the implicit member expression `.origin`. Wherever the type is known from context, a static member of that type can be named with a leading dot.
+In the last line, `.unit` is an *implicit member expression*: where the expected type is known, a static member can be named with just a leading dot.
 
 ## 6.2. Mutating Methods and Reference Types
 
-Because a struct is a value, its methods can't modify `self` unless they're explicitly marked `mutating`. A mutating method receives `self` as an implicit `inout` parameter:
+Because a struct is a value, its methods can't change it unless they're marked `mutating`. A mutating method receives `self` as an implicit `inout` parameter (Section 2.3.2), so its changes are written back to the variable it was called on:
 
 ```swift
-extension Point {
-    mutating func scale(by factor: Double) {
-        x *= factor
-        y *= factor
+extension Interval {
+    /// Moves the interval by delta.
+    mutating func shift(by delta: Double) {
+        lower += delta
+        upper += delta
     }
 }
+
+var slot = Interval(lower: 14, upper: 15)
+slot.shift(by: 1.5)
+print(slot)  // "Interval(lower: 15.5, upper: 16.5)"
 ```
 
-The name of this method is `Point.scale(by:)`, and calling it modifies the variable on which it was called:
+A mutating method can be called only on a variable:
 
 ```swift
-var r = Point(x: 1, y: 2)
-r.scale(by: 2)
-print(r)  // "Point(x: 2.0, y: 4.0)"
+let fixed = Interval(lower: 0, upper: 1)
+fixed.shift(by: 1)  // compile error: cannot use mutating member on immutable value: 'fixed' is a 'let' constant
 ```
 
-A mutating method can be called only on a variable, because only a variable can be modified:
+That's what makes `let` meaningful for structs. The compiler guarantees that a non-mutating method doesn't change the value, and that a `let` struct never changes at all, so readers and the optimizer can both rely on it.
+
+The API Design Guidelines recommend naming mutating and non-mutating versions of an operation consistently. When the operation is a verb, the mutating method uses the plain verb and the non-mutating one uses its "-ed" or "-ing" form: `sort()` and `sorted()`, `shift(by:)` and `shifted(by:)`. When it's naturally a noun, the non-mutating method uses the noun and the mutating one adds the prefix "form": `union(_:)` and `formUnion(_:)`. A non-mutating version is often easiest to write in terms of the mutating one:
 
 ```swift
-let p = Point(x: 1, y: 2)
-p.scale(by: 2)  // compile error: cannot use mutating member on immutable value: 'p' is a 'let' constant
-Point(x: 1, y: 2).scale(by: 2)  // compile error: cannot use mutating member on immutable value
-```
-
-So `mutating` plays the role that a pointer receiver does in Go, and the `let`/`var` distinction plays the role of whether you can take an address. But the Swift rules are stricter and more visible. A non-mutating method is guaranteed not to change the value, which the compiler enforces. And a `let` struct is guaranteed never to change at all.
-
-The API Design Guidelines recommend naming mutating and non-mutating pairs consistently. When an operation is naturally described by a verb, use the imperative verb for the mutating method and the "-ed" or "-ing" form for the non-mutating one that returns a new value: `sort()` and `sorted()`, `reverse()` and `reversed()`, `scale(by:)` and `scaled(by:)`. When an operation is naturally described by a noun, use the noun for the non-mutating method and the prefix "form" for the mutating one: `union(_:)` and `formUnion(_:)`.
-
-```swift
-extension Point {
-    func scaled(by factor: Double) -> Point {
+extension Interval {
+    func shifted(by delta: Double) -> Interval {
         var copy = self
-        copy.scale(by: factor)
+        copy.shift(by: delta)
         return copy
     }
 }
 ```
 
-A mutating method can even replace `self` completely: `self = Point.origin`. This is especially useful in enums, where a mutating method can change the case:
+A mutating method can even assign a whole new value to `self`, which is the natural way to write state transitions for enums:
 
 ```swift
 enum TrafficLight {
@@ -172,438 +165,372 @@ enum TrafficLight {
 
 ### 6.2.1. Classes
 
-Classes are reference types. A variable of class type holds a reference to an object, and methods of a class may modify the object's stored properties without being marked `mutating`, because they modify the shared object, not the variable that refers to it:
+Class instances are reference types (Section 2.3.2). A variable of class type refers to a shared object, and a method can change the object's stored properties without being marked `mutating`, since it changes the object, not the variable referring to it:
 
 ```swift
-final class Counter {
-    private(set) var count = 0
+final class Connection {
+    let host: String
+    private(set) var bytesSent = 0
 
-    func increment() {
-        count += 1  // no 'mutating' needed
+    init(host: String) {
+        self.host = host
+    }
+
+    func send(_ bytes: [UInt8]) {
+        // ...write the bytes to the network...
+        bytesSent += bytes.count  // no 'mutating' needed
     }
 }
 
-let c = Counter()
-c.increment()  // fine, even though c is a let
-print(c.count)  // "1"
+let conn = Connection(host: "example.com")
+conn.send(Array("hello".utf8))  // fine, although conn is a let
+print(conn.bytesSent)  // "5"
 ```
 
-`final` means that the class can't be subclassed. We recommend marking classes `final` unless they're specifically designed for inheritance, since it makes the code easier to reason about and lets the compiler call methods directly rather than through a dispatch table.
+`final` prevents subclassing. We recommend marking classes `final` unless they're designed to be subclassed: it makes the code easier to reason about and lets the compiler call methods directly instead of through a table.
 
-When should you use a class rather than a struct? Use a struct by default. Use a class when the thing you're modeling has *identity*, that is, when two references to "the same" object should see each other's changes: a network connection, a file handle, a cache shared across a program, a node in a graph that several other nodes point to. Use a class, too, when you need inheritance to interoperate with a framework designed around it, or when you need a `deinit`. Some Swift programmers would add "when the value is very large," but copy-on-write makes that less compelling than it seems.
+When should a type be a class rather than a struct? Start with a struct, and use a class when the thing being modeled has *identity*, when everyone holding a reference should see the same changes. A network connection, an open file, a shared cache, and a node in a graph with several incoming edges all have identity. Use a class also when you need `deinit` to release a resource, or when a framework requires subclassing. Large data isn't by itself a reason, since copy-on-write makes copying values cheap.
 
 ### 6.2.2. Representing Absence
 
-In Go, `nil` is a valid value for a pointer receiver, so a method can be called on a `nil` linked list to mean "the empty list." Swift's references are never `nil` unless their type is optional, so the question doesn't arise in the same way. Instead, there are two common designs.
+Swift references can't be `nil` unless their type is optional, so "no value" is always explicit. There are two common ways to give it behavior.
 
-The first is to make emptiness a case of an enum, as the `List` type of Section 4.4 does with its `end` case:
+The first is to make emptiness one of the cases of an enum, as the `List` type of Section 4.4 does with its `end` case. Methods on the enum then handle the empty case like any other:
 
 ```swift
-/// An IntList is a linked list of integers.
-indirect enum IntList {
-    case empty
-    case cons(Int, IntList)
-
-    /// Returns the sum of the list elements.
-    var sum: Int {
+extension List {
+    /// The number of elements in the list.
+    var count: Int {
         switch self {
-        case .empty: 0
-        case let .cons(value, tail): value + tail.sum
+        case .end: 0
+        case .node(_, let rest): 1 + rest.count
         }
     }
 }
 
-let list = IntList.cons(1, .cons(2, .cons(3, .empty)))
-print(list.sum)  // "6"
-print(IntList.empty.sum)  // "0"
+print(List.node("a", .node("b", .end)).count)  // "2"
+print(List<String>.end.count)  // "0"
 ```
 
-Here the `switch` is used as an expression, so each case produces the property's value without a `return`.
+Here `switch` is used as an expression, each case producing the property's value directly.
 
-The second is to extend `Optional` itself, which gives methods to a value that might be `nil`. For example, it's often convenient to treat a `nil` string as empty:
+The second is to extend `Optional` itself, giving methods to a value that might be `nil`:
 
 ```swift
 extension Optional where Wrapped == String {
+    /// The string, or "" if there is none.
     var orEmpty: String { self ?? "" }
 }
 
-let name: String? = nil
-print(name.orEmpty.count)  // "0"
+let middleName: String? = nil
+print(middleName.orEmpty.isEmpty)  // "true"
 ```
 
-Optional chaining handles the more general case: `node?.next?.value` evaluates to `nil` if any link in the chain is `nil`, and calls methods only on values that are present.
+For everything else, *optional chaining* applies a method only when a value is present: `connection?.send(bytes)` sends only if `connection` isn't `nil`, and `user?.address?.city` is `nil` if any link of the chain is.
 
 ## 6.3. Composing Types with Extensions and Protocols
 
-Go composes types by *struct embedding*: declaring a `ColoredPoint` with an anonymous `Point` field promotes all of `Point`'s methods to `ColoredPoint`, so a colored point can be scaled and measured without any forwarding code. As we saw in Section 4.4, Swift has no direct equivalent. It offers three alternatives, each suited to different circumstances.
+Building a bigger type out of smaller ones is called *composition*, and Swift offers three ways to share code between the bigger type and the smaller ones.
 
 ### 6.3.1. Plain Composition
 
-The simplest is just to store a `Point` in a named property, and access its methods through the property:
+The simplest is to store the smaller value as a property and reach its methods through the property. A note attached to a stretch of a recording, say, has an interval and some text:
 
 ```swift
-// swiftpl/ch6/coloredpoint
-struct Color {
-    var r, g, b, a: UInt8
-    static let red = Color(r: 255, g: 0, b: 0, a: 255)
-    static let blue = Color(r: 0, g: 0, b: 255, a: 255)
+// swiftpl/ch6/annotation
+struct Annotation {
+    var span: Interval
+    var note: String
 }
 
-struct ColoredPoint {
-    var point: Point
-    var color: Color
-}
-
-var p = ColoredPoint(point: Point(x: 1, y: 1), color: .red)
-var q = ColoredPoint(point: Point(x: 5, y: 4), color: .blue)
-print(p.point.distance(to: q.point))  // "5.0"
-p.point.scale(by: 2)
-q.point.scale(by: 2)
-print(p.point.distance(to: q.point))  // "10.0"
+var a = Annotation(span: Interval(lower: 62, upper: 75), note: "guitar solo")
+var b = Annotation(span: Interval(lower: 70, upper: 90), note: "crowd noise")
+print(a.span.overlaps(b.span))  // "true"
+a.span.shift(by: 30)
+print(a.span.overlaps(b.span))  // "false"
 ```
 
-This is explicit and clear, and it's what most Swift programmers would write. Note that `ColoredPoint` *has a* `Point`; it isn't one. A function that takes a `Point` can't be passed a `ColoredPoint`:
-
-```swift
-p.point.distance(to: q)  // compile error: cannot convert value of type 'ColoredPoint' to expected argument type 'Point'
-```
+This is explicit and clear, and it's what most Swift code does. An `Annotation` *has* an interval; it isn't one, and a function expecting an `Interval` won't accept an `Annotation`.
 
 ### 6.3.2. Protocol Extensions
 
-When several types share some behavior, the Swift approach is to describe what they have in common with a *protocol*, and implement the behavior once in a *protocol extension*. Here's a protocol for anything that has a position:
+When several types share a capability, Swift's preferred approach is to name the capability with a *protocol* and implement the shared behavior once, in a *protocol extension*. Here's a protocol for anything that occupies a span of time:
 
 ```swift
-protocol Positioned {
-    var position: Point { get set }
+protocol HasSpan {
+    var span: Interval { get set }
 }
 
-extension Positioned {
-    func distance(to other: some Positioned) -> Double {
-        position.distance(to: other.position)
+extension HasSpan {
+    var duration: Double { span.length }
+
+    func overlaps(_ other: some HasSpan) -> Bool {
+        span.overlaps(other.span)
     }
 
-    mutating func scale(by factor: Double) {
-        position.scale(by: factor)
+    mutating func shift(by delta: Double) {
+        span.shift(by: delta)
     }
 }
 ```
 
-The protocol requires a single property, `position`, that can be read and written. The extension then provides methods to *every* type that conforms to `Positioned`, implemented in terms of that requirement. A type gets all of these methods simply by conforming:
+The protocol requires one thing, a readable and writable `span`. The extension then gives *every* conforming type a `duration` property and `overlaps` and `shift` methods, all written in terms of that one requirement. A type acquires them simply by conforming:
 
 ```swift
-extension ColoredPoint: Positioned {
-    var position: Point {
-        get { point }
-        set { point = newValue }
-    }
+extension Annotation: HasSpan {}  // its stored 'span' property satisfies the requirement
+
+struct Meeting: HasSpan {
+    var span: Interval
+    var title: String
+    var attendees: [String]
 }
 
-struct Sprite: Positioned {
-    var position: Point
-    var image: String
-}
-
-var p = ColoredPoint(point: Point(x: 1, y: 1), color: .red)
-let s = Sprite(position: Point(x: 4, y: 5), image: "ship.png")
-print(p.distance(to: s))  // "5.0"
-p.scale(by: 2)
+var standup = Meeting(span: Interval(lower: 9, upper: 9.25), title: "standup", attendees: ["Ada", "Grace"])
+let review = Annotation(span: Interval(lower: 9, upper: 10), note: "code review")
+print(standup.overlaps(review))  // "true": a meeting and an annotation, compared directly
+standup.shift(by: 1)
+print(standup.duration)  // "0.25"
 ```
 
-`Sprite` satisfies the requirement with a stored property of the right name and type, so its conformance needs no other code. `ColoredPoint` satisfies it with a computed property. Now *any* two positioned things can measure the distance between them, whatever their types.
+`Annotation` already had a stored property named `span` of the right type, so its conformance needs no code at all. A type whose data is arranged differently could satisfy the requirement with a computed property instead.
 
-Protocol extensions are the heart of *protocol-oriented programming*, a style that Swift's designers introduced in 2015 and that permeates the standard library. Sequence algorithms like `map`, `filter`, `contains`, and `sorted` are all defined in extensions of the `Sequence` protocol, which requires only a way to make an iterator. Any type that provides one gets dozens of algorithms for free. We'll study protocols in depth in Chapter 7.
+Protocol extensions are the foundation of *protocol-oriented programming*, the style that runs throughout Swift's standard library. The `Sequence` protocol, for example, requires little more than a way to iterate, and its extensions supply `map`, `filter`, `reduce`, `contains`, `sorted`, `min`, `max`, and dozens of other methods to every conforming type. Chapter 7 explores protocols in depth.
 
 ### 6.3.3. Class Inheritance
 
-Finally, Swift classes support single inheritance. A subclass inherits the stored properties and methods of its superclass, can add its own, and can *override* methods, which are then dispatched dynamically according to the object's run-time class:
+Classes can also share code through *inheritance*. A subclass inherits its superclass's stored properties and methods, can add more, and can *override* methods; an overridden method is chosen at run time according to the object's actual class:
 
 ```swift
 class Shape {
-    var origin: Point
-    init(origin: Point) { self.origin = origin }
+    var name: String
+    init(name: String) { self.name = name }
     func area() -> Double { 0 }
-    func describe() -> String { "shape with area \(area())" }
+    func summary() -> String { "\(name) with area \(area())" }
 }
 
-final class Circle: Shape {
-    var radius: Double
-    init(origin: Point, radius: Double) {
-        self.radius = radius
-        super.init(origin: origin)
+final class Square: Shape {
+    var side: Double
+    init(side: Double) {
+        self.side = side
+        super.init(name: "square")
     }
-    override func area() -> Double { .pi * radius * radius }
+    override func area() -> Double { side * side }
 }
 
-let shapes: [Shape] = [Shape(origin: .origin), Circle(origin: .origin, radius: 1)]
+let shapes: [Shape] = [Shape(name: "point"), Square(side: 3)]
 for s in shapes {
-    print(s.describe())
+    print(s.summary())
 }
-// shape with area 0.0
-// shape with area 3.141592653589793
+// point with area 0.0
+// square with area 9.0
 ```
 
-The `override` keyword is required, so you can't accidentally override a method by giving it the same name, and `super.init` must be called to initialize the superclass's properties. Swift's class initialization rules are notoriously intricate (designated and convenience initializers, two-phase initialization, required initializers), which is one more reason the community leans toward structs and protocols.
+`override` is mandatory, so a method can't override another by accident, and a subclass's initializer must set its own properties and then call `super.init` to set the inherited ones. Swift's full rules for class initialization (designated and convenience initializers, required initializers, two-phase initialization) are considerably more intricate than this example suggests, which is one reason everyday Swift favors structs and protocols.
 
-Inheritance is appropriate when you're working with a framework designed around it, or when you have a genuine "is-a" hierarchy whose members share both data and behavior. For most code, protocols with extensions give the same reuse with less coupling, and they work with structs and enums too.
-
-### 6.3.4. Example: A Cache with a Lock
-
-Go programs sometimes embed a `sync.Mutex` in an unnamed struct so that the struct's `Lock` and `Unlock` methods protect its other fields. Swift's `Mutex` takes a different approach: rather than sitting beside the data it protects, it *contains* it, and the only way to reach the data is through `withLock`:
-
-```swift
-import Synchronization
-
-let cache = Mutex<[String: String]>([:])
-
-func lookup(_ key: String) -> String? {
-    cache.withLock { mapping in
-        mapping[key]
-    }
-}
-
-func store(_ key: String, _ value: String) {
-    cache.withLock { $0[key] = value }
-}
-```
-
-This design makes it impossible to forget to take the lock, since the data simply isn't accessible otherwise. We'll return to `Mutex` and its alternatives in Chapter 9.
+Inheritance is the right tool for a genuine "is-a" hierarchy whose members share both data and behavior, and for working with frameworks designed around subclassing. For sharing behavior among types in general, protocols with extensions provide the same reuse with less coupling, and they work for structs and enums too.
 
 ## 6.4. Method Values and Key Paths
 
-Usually we select and call a method in the same expression, as in `p.distance(to: q)`, but it's possible to separate these two operations. The selector `p.distance(to:)` yields a *method value*, a function that binds a method to a specific instance `p`. This function can then be invoked without an instance; it needs only the remaining arguments:
+A method is usually selected and called in one expression, as in `meeting.contains(10)`. The two steps can be separated. Selecting a method from an instance without calling it gives a *method value*: a function bound to that instance, which can be called later with just the remaining arguments:
 
 ```swift
-let p = Point(x: 1, y: 2)
-let q = Point(x: 4, y: 6)
+let workingHours = Interval(lower: 9, upper: 17)
+let isDuringWork = workingHours.contains  // a method value of type (Double) -> Bool
 
-let distanceFromP = p.distance(to:)  // method value
-print(distanceFromP(q))  // "5.0"
-let origin = Point(x: 0, y: 0)
-print(distanceFromP(origin))  // "2.23606797749979", √5
+let alarms = [6.5, 9.25, 12.0, 18.75, 23.0]
+print(alarms.filter(isDuringWork))  // "[9.25, 12.0]"
 ```
 
-Method values are useful when an API calls for a function value, and the desired behavior for that function is to call a method on a specific instance:
+Method values are handy wherever an API wants a function and the behavior needed is "call this method on that instance." Passing `workingHours.contains` directly to `filter` reads better than wrapping it in a closure.
+
+A method can also be referenced through its *type*, as `Interval.contains`. This *unapplied method reference* is a *curried* function: given an instance, it returns a method value bound to that instance:
 
 ```swift
-let distances = [q, origin].map(p.distance(to:))
+let containment = Interval.contains
+print(type(of: containment))  // "(Interval) -> (Double) -> Bool"
+print(containment(.unit)(0.5))  // "true"
 ```
 
-Related to the method value is the *unapplied method reference*. Whereas a method value is formed by selecting a method from an instance, an unapplied method reference names the method through its type: `Point.distance(to:)`. It produces a *curried* function, one that takes the instance and returns a method value:
+That's occasionally useful for applying the same method to many instances. Operators, which are static functions, can be chosen dynamically the same way, which is often clearer than branching inside a loop. Here a report finds either the earliest start or the latest finish in a list of intervals, depending on a flag:
 
 ```swift
-let distance = Point.distance(to:)
-print(distance(p)(q))  // "5.0"
-print(type(of: distance))  // "(Point) -> (Point) -> Double"
-```
-
-This is occasionally useful when you need to choose a method dynamically and apply it to many instances. Operators are static functions, so they can be chosen the same way, which is often clearer. In the following example, the variable `op` represents either the addition or the subtraction operator for `Point`, and `Path.translate(by:add:)` calls it for each point in the path:
-
-```swift
-extension Point {
-    static func + (p: Point, q: Point) -> Point { Point(x: p.x + q.x, y: p.y + q.y) }
-    static func - (p: Point, q: Point) -> Point { Point(x: p.x - q.x, y: p.y - q.y) }
+func extreme(of times: [Double], latest: Bool) -> Double? {
+    let pick: (Double, Double) -> Double = latest ? max : min
+    guard let first = times.first else { return nil }
+    return times.dropFirst().reduce(first, pick)
 }
 
-extension Array where Element == Point {
-    mutating func translate(by offset: Point, add: Bool) {
-        let op: (Point, Point) -> Point = add ? (+) : (-)
-        for i in indices {
-            // Call either self[i] + offset or self[i] - offset.
-            self[i] = op(self[i], offset)
-        }
-    }
-}
+print(extreme(of: schedule.map(\.lower), latest: false) as Any)  // "Optional(9.0)"
+print(extreme(of: schedule.map(\.upper), latest: true) as Any)  // "Optional(14.0)"
 ```
 
-The operators must be parenthesized, `(+)`, to refer to them as function values.
+The library functions `min` and `max` are generic, but the type annotation on `pick` tells the compiler which specialization to use.
 
 ### 6.4.1. Key Paths
 
-A *key path* is a reference to a property, rather than a method, that isn't yet bound to an instance. It's written with a backslash, the type name, and a path of properties: `\Point.x`, `\ColoredPoint.point.y`, `\Path.count`. When the type can be inferred, it may be omitted: `\.x`.
+A *key path* is to a property what an unapplied method reference is to a method: a reference to a property that isn't yet tied to an instance. It's written with a backslash, the type, and the path of properties, as in `\Interval.lower` or `\Meeting.span.upper`; when the type can be inferred, it may be omitted, as in `\.lower`.
 
-A key path can be applied to any instance of its root type using the `[keyPath:]` subscript, and if it refers to a mutable property, it can be used to modify it:
+A key path is applied to an instance with the `[keyPath:]` subscript, and if it leads to a mutable property, it can be used to change it:
 
 ```swift
-var pt = Point(x: 1, y: 2)
-let kp = \Point.y
-print(pt[keyPath: kp])  // "2.0"
-pt[keyPath: kp] = 10
-print(pt)  // "Point(x: 1.0, y: 10.0)"
+var block = Interval(lower: 13, upper: 14)
+let end = \Interval.upper
+print(block[keyPath: end])  // "14.0"
+block[keyPath: end] = 15
+print(block)  // "Interval(lower: 13.0, upper: 15.0)"
 ```
 
-Key paths are values: they can be stored, passed to functions, compared with `==`, and used as dictionary keys. And a key path literal can be used anywhere a function from the root type to the property type is expected, which makes for concise code with the standard library's higher-order functions:
+Key paths are values: they can be stored, passed as arguments, compared with `==`, and used as dictionary keys. A key-path literal can also stand in for a function from a type to one of its properties, which makes code using the standard library's higher-order functions concise:
 
 ```swift
-let xs = perim.map(\.x)  // [1.0, 5.0, 5.0, 1.0]
-let maxY = perim.max(by: { $0.y < $1.y })
-let sortedByX = perim.sorted(using: KeyPathComparator(\.x))  // Foundation
+let starts = schedule.map(\.lower)  // [9.0, 9.5, 13.0]
+let longest = schedule.max(by: { $0.length < $1.length })
+let byStart = schedule.sorted(using: KeyPathComparator(\.lower))  // Foundation
 ```
 
-Key paths are statically typed (`\Point.x` has type `WritableKeyPath<Point, Double>`), so they're checked by the compiler. We saw them used with `@dynamicMemberLookup` in Section 4.4, and we'll see them again in Chapter 12, where they provide a type-safe alternative to setting properties by name through reflection.
+Key paths are statically typed. `\Interval.upper` has type `WritableKeyPath<Interval, Double>`, so misspelled paths and mismatched types are compile-time errors. Section 4.4 used them with `@dynamicMemberLookup`, and Chapter 12 uses them as a type-safe alternative to setting properties by name at run time.
 
-## 6.5. Example: Bit Vector Type
+## 6.5. Example: A Ring Buffer
 
-Sets in Swift are usually implemented as `Set<Element>`, a hash table. But there are many cases where a set of small non-negative integers with many elements is better represented by a *bit vector*: a data-flow analysis in a compiler, say, or the set of open file descriptors. A bit vector uses an array of unsigned integer values, or "words," each bit of which represents a possible element of the set. The set contains *i* if the *i*th bit is set. The following program demonstrates a simple bit vector type with three methods:
+A *ring buffer*, or circular buffer, holds a fixed number of elements and, once full, makes room for each new element by discarding the oldest. It's the natural structure for keeping "the last *n*" of anything, such as recent log lines, the latest sensor readings for a moving average, or a shell's command history, using a fixed amount of memory however long the program runs.
+
+The implementation keeps the elements in a fixed-size array used circularly: `head` is the position of the oldest element, the others follow it, and positions wrap around from the end of the array to the start. Making it *generic* over the element type (the `<Element>` after its name) lets one implementation hold strings, numbers, or anything else. Generics get a full treatment in Section 7.7:
 
 ```swift
-// swiftpl/ch6/intset
-/// An IntSet is a set of small non-negative integers.
-struct IntSet {
-    private var words: [UInt64] = []
+// swiftpl/ch6/ringbuffer
+/// A RingBuffer holds up to `capacity` of the most recently appended elements.
+struct RingBuffer<Element> {
+    private var storage: [Element?]
+    private var head = 0  // position of the oldest element
+    private(set) var count = 0
 
-    /// Reports whether the set contains the non-negative value x.
-    func contains(_ x: Int) -> Bool {
-        let (word, bit) = x.quotientAndRemainder(dividingBy: 64)
-        return word < words.count && words[word] & (1 << bit) != 0
+    init(capacity: Int) {
+        precondition(capacity > 0, "capacity must be positive")
+        storage = Array(repeating: nil, count: capacity)
     }
 
-    /// Adds the non-negative value x to the set.
-    mutating func insert(_ x: Int) {
-        precondition(x >= 0, "IntSet elements must be non-negative")
-        let (word, bit) = x.quotientAndRemainder(dividingBy: 64)
-        while word >= words.count {
-            words.append(0)
+    var capacity: Int { storage.count }
+    var isFull: Bool { count == capacity }
+
+    /// Appends an element, discarding the oldest one if the buffer is full.
+    mutating func append(_ element: Element) {
+        storage[(head + count) % capacity] = element
+        if isFull {
+            head = (head + 1) % capacity  // the oldest element was just overwritten
+        } else {
+            count += 1
         }
-        words[word] |= 1 << bit
     }
 
-    /// Sets the set to the union of itself and other.
-    mutating func formUnion(_ other: IntSet) {
-        for (i, otherWord) in other.words.enumerated() {
-            if i < words.count {
-                words[i] |= otherWord
-            } else {
-                words.append(otherWord)
-            }
+    /// Removes and returns the oldest element, or nil if the buffer is empty.
+    mutating func popFirst() -> Element? {
+        guard count > 0 else { return nil }
+        defer {
+            storage[head] = nil
+            head = (head + 1) % capacity
+            count -= 1
         }
+        return storage[head]
+    }
+
+    /// The elements, from oldest to newest.
+    var elements: [Element] {
+        (0..<count).map { storage[(head + $0) % capacity]! }
     }
 }
 ```
 
-Since each word has 64 bits, to locate the bit for `x`, we use the quotient `x / 64` as the word index and the remainder `x % 64` as the bit index within that word, conveniently computed together by `quotientAndRemainder(dividingBy:)`. The `formUnion` operation uses the bitwise OR operator `|` to compute the union 64 elements at a time. (We'll revisit the choice of 64-bit words in Exercise 6.5.) The expression `1 << bit` relies on Swift's heterogeneous shifts: the literal `1` takes its type, `UInt64`, from the other operand of `&` or `|=`, and the shift amount can be an `Int`. The method names follow the conventions of the standard library's `SetAlgebra` protocol, which `Set` and `OptionSet` conform to.
+The storage is an array of *optionals*, so that unused positions can hold `nil` instead of some arbitrary placeholder value. `append` writes the new element just past the newest one, wrapping around with the remainder operator `%`. If the buffer was already full, that position held the oldest element, which has now been overwritten, so `head` advances. `popFirst` uses `defer` (Section 5.8) to update the bookkeeping *after* the return value has been read. The `!` in `elements` is safe because every position in the occupied range holds a value.
 
-This implementation lacks many desirable features, some of which are posed as exercises below, but one is hard to live without: a way to print an `IntSet` as a string. Let's give it a `description` property by conforming to `CustomStringConvertible`:
+A ring buffer is far more useful if it can be printed, so let's give it a `description`:
 
 ```swift
-extension IntSet: CustomStringConvertible {
-    /// Returns the set as a string of the form "{1 2 3}".
+extension RingBuffer: CustomStringConvertible {
     var description: String {
-        var elements: [String] = []
-        for (i, word) in words.enumerated() where word != 0 {
-            for j in 0..<64 where word & (1 << j) != 0 {
-                elements.append(String(64 * i + j))
-            }
-        }
-        return "{" + elements.joined(separator: " ") + "}"
+        "[" + elements.map { "\($0)" }.joined(separator: ", ") + "]"
     }
 }
 ```
 
-Notice that the extension can access the `private` property `words`. In Swift, `private` means visible within the enclosing declaration *and its extensions in the same file*.
-
-We can now demonstrate `IntSet` in action:
+Here it keeps the last three commands of a shell session:
 
 ```swift
-var x = IntSet()
-var y = IntSet()
-x.insert(1)
-x.insert(144)
-x.insert(9)
-print(x)  // "{1 9 144}"
-
-y.insert(9)
-y.insert(42)
-print(y)  // "{9 42}"
-
-x.formUnion(y)
-print(x)  // "{1 9 42 144}"
-
-print(x.contains(9), x.contains(123))  // "true false"
+var history = RingBuffer<String>(capacity: 3)
+for command in ["ls", "cd src", "swift build", "swift test"] {
+    history.append(command)
+}
+print(history)  // "[cd src, swift build, swift test]": "ls" was discarded
+print(history.popFirst()!)  // "cd src"
+history.append("git status")
+print(history, history.count)  // "[swift build, swift test, git status] 3"
 ```
 
-A word of caution, for readers coming from Go: in the Go version of this example, a value and a pointer to it print differently, depending on whether the `String` method has a pointer receiver. In Swift, there's no such distinction. A struct's `description` works the same way on a `let`, a `var`, a temporary, or an element of an array.
+Because `RingBuffer` is a struct whose only storage is an array, it has value semantics for free: `var snapshot = history` makes an independent copy, and later appends to `history` don't affect `snapshot`, with copy-on-write keeping the copy cheap until one of them changes.
 
-And notice something we got for free. In Go, copying an `IntSet` copies the slice header, which aliases the words of the original; modifying the copy can corrupt the original, which is why Go's version needs an explicit `Copy` method. In Swift, `var z = x` gives `z` its own logical copy, thanks to copy-on-write arrays, and modifying `z` never affects `x`.
+**Exercise 6.1:** Add a `last` property that returns the newest element, a `removeAll()` method, and a subscript in which index 0 is the oldest element and `count - 1` the newest.
 
-**Exercise 6.1:** Implement these additional members:
+**Exercise 6.2:** Add `append(contentsOf:)`, which appends every element of a sequence. Make sure it works correctly when the sequence is longer than the buffer's capacity.
 
-```swift
-var count: Int  // return the number of elements
-mutating func remove(_ x: Int)  // remove x from the set
-mutating func removeAll()  // remove all elements from the set
-```
+**Exercise 6.3:** Add a constrained extension, `extension RingBuffer where Element == Double`, with an `average` property, and use it to print a moving average of the last ten numbers read from the standard input.
 
-**Exercise 6.2:** Define a variadic `mutating func insert(_ values: Int...)` method that allows a list of values to be added, such as `s.insert(1, 2, 3)`.
-
-**Exercise 6.3:** Implement `formIntersection(_:)`, `subtract(_:)`, and `formSymmetricDifference(_:)`, and their non-mutating counterparts `intersection`, `subtracting`, and `symmetricDifference`. (The symmetric difference of two sets contains the elements present in one set or the other but not both.)
-
-**Exercise 6.4:** Make `IntSet` conform to `Sequence`, so that its elements can be iterated with `for`-`in`. (See Section 7.7.) Which methods do you get for free?
-
-**Exercise 6.5:** Make `IntSet` conform to the standard library's `SetAlgebra` protocol and `ExpressibleByArrayLiteral`. Which requirements have default implementations? Write a test that compares the behavior of `IntSet` with `Set<Int>` on random inputs.
+**Exercise 6.4:** Add a mutating method that changes the buffer's capacity, keeping the newest elements when shrinking.
 
 ## 6.6. Encapsulation
 
-A variable or method of an object is said to be *encapsulated* if it is inaccessible to clients of the object. Encapsulation, sometimes called *information hiding*, is a key aspect of object-oriented programming.
-
-Swift has five access levels, from most to least restrictive:
+A property or method is *encapsulated* when clients of the type can't reach it, and *information hiding* of this kind is one of the main purposes of methods and types. Swift controls it with access levels, from the most restrictive to the least:
 
 ```
-private       visible within the enclosing declaration, and its extensions in the same file
+private       visible within the enclosing declaration and its extensions in the same file
 fileprivate   visible within the same source file
 internal      visible within the same module (the default)
-package       visible within modules of the same package (Swift 5.9)
+package       visible within the modules of the same package (Swift 5.9)
 public        visible to any module that imports this one
-open          like public, but also allows subclassing and overriding outside the module
+open          like public, and also allows subclassing and overriding from other modules
 ```
 
-Go has only two levels, controlled by capitalization: exported and unexported. The unit of encapsulation in Go is the package. In Swift, you can encapsulate at the level of a single type, using `private`.
+`RingBuffer` keeps its `storage` and `head` `private`. Clients can append, pop, and read the elements, but they can't reach into the array, so they can't put the buffer into a state its methods don't expect, such as a `head` past the end of the array, or a `count` that disagrees with the occupied positions.
+
+Its `count` illustrates another common need: a property that clients can read but not write. Declaring it `private(set)` makes the getter `internal` (or whatever the property's access level is) and the setter `private`. Other languages often achieve the same effect with a private field and a public getter method. In Swift, that's unnecessary, since a stored property can later be turned into a computed one without affecting the code that uses it.
+
+Encapsulation pays off in three ways. Because only the type's own code can modify its private state, understanding how that state can change means reading only that code. Because clients can't depend on hidden details, the type's author can change its representation, perhaps replacing the array of optionals with a raw buffer for speed, without breaking anyone. And, most important, because every change to the state goes through the type's own methods, those methods can ensure that the state always satisfies the type's invariants.
+
+*Property observers* give a stored property invariants of its own. `willSet` and `didSet` blocks run before and after every assignment, keeping the convenience of property syntax while enforcing a rule:
 
 ```swift
-struct IntSet {
-    private var words: [UInt64] = []
-}
-```
+// swiftpl/ch6/thermostat
+struct Thermostat {
+    enum Mode { case heating, cooling, idle }
 
-Clients of `IntSet` can't see `words`, so they can manipulate the set only through its methods, and the representation can change in the future without breaking them.
+    /// The target temperature, kept within 10...30 °C.
+    var target = 20.0 {
+        didSet { target = min(max(target, 10), 30) }
+    }
+    private(set) var mode = Mode.idle
 
-It's common to want a property that clients can read but not write. Swift supports that directly by giving the setter a more restrictive access level than the getter:
-
-```swift
-struct Counter {
-    private(set) var count = 0
-
-    mutating func increment() { count += 1 }
-    mutating func reset() { count = 0 }
-}
-```
-
-Clients can read `count` but can change it only with `increment` and `reset`. Go code achieves the same thing with an unexported field and an exported getter method; in Swift, getters and setters are almost never written as methods, since a property can always be changed later from stored to computed without breaking its clients.
-
-That's one of the benefits of encapsulation. Here are three in all.
-
-First, because clients cannot directly modify the object's variables, one need inspect fewer statements to understand the possible values of those variables.
-
-Second, hiding implementation details prevents clients from depending on things that might change, which gives the designer greater freedom to evolve the implementation without breaking API compatibility. As an example, consider a `Buffer` type that holds bytes. It might be implemented with an `[UInt8]` today, and later grow an inline buffer for small contents, to avoid heap allocation. If its storage is `private`, the change is invisible to clients.
-
-Third, and in many cases most important, encapsulation prevents clients from setting an object's variables arbitrarily. Because the object's variables can be set only by functions in the same type, the author of that type can ensure that all those functions maintain the object's internal invariants. For example, the `Counter` type above permits clients to increment the counter or to reset it to zero, but not to set it to some arbitrary value.
-
-Swift offers one more tool for maintaining invariants: *property observers*. A stored property can have `willSet` and `didSet` blocks that run before and after each assignment:
-
-```swift
-struct Logger {
-    var prefix: String
-    var level: Int = 0 {
-        didSet {
-            level = min(max(level, 0), 5)  // clamp to valid range
+    mutating func update(current: Double) {
+        if current < target - 0.5 {
+            mode = .heating
+        } else if current > target + 0.5 {
+            mode = .cooling
+        } else {
+            mode = .idle
         }
     }
 }
+
+var t = Thermostat()
+t.target = 45
+print(t.target)  // "30.0": clamped
+t.update(current: 18)
+print(t.mode)  // "heating"
 ```
 
-When a property observer assigns to its own property, as here, the observer isn't triggered again. Observers let a type enforce constraints and maintain derived state while keeping the convenient property syntax.
+Assigning to a property inside its own `didSet`, as here, doesn't trigger the observer again.
 
-Encapsulation is not always desirable. A type like `Point` reveals its properties, and that's fine: a point *is* its two coordinates, and there's no invariant to protect. Similarly, Foundation's `Date` hides its representation (a `Double` count of seconds) but publicly exposes conversions like `timeIntervalSince1970`, while `Duration` exposes its components. Like many design decisions, it's a judgment call.
+Not every type needs to hide anything. `Interval` exposes its bounds, and that's fine, because any pair of numbers is a valid interval, so there's no invariant to protect, and its bounds *are* its meaning. (Should `lower` be allowed to exceed `upper`? If you decide not, that's an invariant, and the bounds should become `private(set)` with an initializer that checks them.) Deciding what to expose is a judgment about which details are essential to a type and which are incidental.
 
-When writing a library, remember that `public` means *forever*. Once a type or method is public and others depend on it, changing it is a breaking change. Swift's default of `internal` means that nothing is public by accident; make each declaration public deliberately, as part of the module's interface.
+For code in libraries, there's a further consideration: anything `public` is a promise. Once other modules depend on it, changing or removing it breaks them. Swift's default of `internal` means nothing becomes public by accident, and each public declaration should be a deliberate part of the module's interface.
 
-**Exercise 6.6:** Write a `Temperature` struct that stores a value in kelvins and exposes `celsius` and `fahrenheit` as computed properties with both getters and setters. Use a `private(set)` or a property observer to ensure that the temperature can never be set below absolute zero.
+**Exercise 6.5:** Change `Interval` so that `lower <= upper` always holds: make the bounds `private(set)`, add a failable initializer that rejects reversed bounds, and adjust `shift(by:)` and the extensions accordingly. Which earlier examples still compile?
+
+**Exercise 6.6:** Write a `BankBalance` type that stores its value as an integer number of cents, can be read as a `Decimal`, and can be changed only by `deposit(_:)` and `withdraw(_:) throws`, which refuses withdrawals that would make the balance negative.

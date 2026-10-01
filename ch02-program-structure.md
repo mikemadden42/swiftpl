@@ -1,14 +1,12 @@
 # 2. Program Structure
 
-In Swift, as in any other programming language, one builds large programs from a small set of basic constructs. Variables store values. Simple expressions are combined into larger ones with operations like addition and subtraction. Basic types are collected into aggregates like arrays and structs. Expressions are used in statements whose execution order is determined by control-flow statements like `if` and `for`. Statements are grouped into functions for isolation and reuse. Functions are gathered into source files and modules.
-
-We saw examples of most of these in the previous chapter. In this chapter, we'll go into more detail about the basic structural elements of a Swift program. The example programs are intentionally simple, so we can focus on the language without getting sidetracked by complicated algorithms or data structures.
+Chapter 1 moved quickly. This chapter slows down and looks at the parts that every Swift program is assembled from: names, declarations, constants and variables, assignment, new types, modules, and the rules of scope that decide which declaration a name refers to. Most of these ideas exist in some form in every language, so the emphasis here is on where Swift's choices differ, and why. The examples are deliberately small so that the language, not the algorithms, stays in focus.
 
 ## 2.1. Names
 
-The names of Swift functions, variables, constants, types, enum cases, and modules follow a simple rule: a name begins with a letter or an underscore and may have any number of additional letters, digits, and underscores. "Letter" is interpreted generously. Most of Unicode is allowed, including accented letters, Greek and CJK characters, and even emoji, so `π`, `naïve`, and `🐶🐮` are all legal names. The convention, however, is to stick to letters a reader can type. Case matters: `heapSort` and `Heapsort` are different names.
+Names in Swift, whether of variables, functions, types, enum cases, or modules, start with a letter or underscore, followed by any number of letters, digits, and underscores. "Letter" covers most of Unicode, so `größe`, `π`, and even `🚀count` are legal names, though code meant for a wide audience usually sticks to what's easy to type. Names are case-sensitive: `userCount` and `UserCount` are different names.
 
-Swift has a few dozen *keywords* that are reserved in most contexts. Among those used in declarations and statements are:
+Some words are reserved by the language:
 
 ```
 actor       class       enum        func        import      init
@@ -23,257 +21,261 @@ while       try         await
 as   Any  false  is  nil  self  Self  super  true
 ```
 
-Others, like `open`, `mutating`, `override`, `lazy`, `weak`, `some`, `any`, and `async`, are *contextual keywords*: they have special meaning only in particular positions and can otherwise be used as ordinary names. If you really need to use a reserved word as a name, perhaps because it's the name of a field in some external data format, enclose it in backticks: ``let `default` = 3``. Swift 6 extended backticks to allow nearly arbitrary text, including spaces, in a name, which is mostly useful for test function names (Chapter 11).
+Many other words, such as `mutating`, `override`, `lazy`, `weak`, `some`, `any`, `open`, and `async`, are *contextual*: they're keywords only in particular positions and ordinary names everywhere else. To use a reserved word as a name, perhaps to match a field in a data format, surround it with backticks, as in ``let `class` = "economy"``. Swift 6 also lets backticks enclose names with spaces and punctuation, which is mostly used for descriptive test names (Chapter 11).
 
-In addition, there are many predeclared names in the standard library, such as `Int`, `String`, `print`, `min`, and `max`. These are not reserved, so you may use them in declarations, shadowing the standard library's versions within your scope. Beware the confusion this can cause.
+The standard library declares many names of its own, such as `Int`, `String`, `print`, `min`, and `max`. These aren't reserved; your own declarations can reuse them, hiding the library's versions within their scope. That's legal but rarely wise.
 
-If an entity is declared within a function, it is *local* to that function. If declared outside of a function, it is visible in all files of the module to which it belongs. Unlike in Go, the case of the first letter has no effect on visibility. Instead, Swift has explicit *access control* keywords. By default every declaration has `internal` access, which means it is visible throughout its own module but not to other modules. To make a declaration visible to modules that import yours, mark it `public`; to hide it within a single file, mark it `private` or `fileprivate`. Section 6.6 and Section 10.5 discuss access control in detail.
+A name declared inside a function is *local* to it. A name declared at the top level of a file is visible throughout the module. Whether it's visible *outside* the module isn't determined by the spelling of the name, as it is in some languages, but by an explicit *access level*. Declarations are `internal` by default, visible throughout their own module. They must be marked `public` to be seen by other modules, and can be narrowed to a single file with `fileprivate` or to a single declaration and its extensions with `private`. Sections 6.6 and 10.5 cover access control.
 
-Swift has strong conventions for names, which the community follows closely and which are set out in the official *API Design Guidelines*. Types and protocols use `UpperCamelCase`; everything else (functions, variables, constants, enum cases, argument labels) uses `lowerCamelCase`. Acronyms and initialisms are written in uniform case according to their position: `utf8Bytes`, `userID`, `URLSession`, `htmlEscape`, never `Utf8Bytes` or `userId`.
+Swift naming follows strong community conventions, codified in the official *API Design Guidelines*. Types and protocols are `UpperCamelCase`; functions, methods, properties, variables, constants, enum cases, and argument labels are `lowerCamelCase`. Acronyms are uniformly upper- or lowercase depending on position, so it's `URLSession` and `htmlBody`, `userID` and `idToken`, but never `UrlSession` or `userId`.
 
-The guidelines emphasize *clarity at the point of use*. A name should make sense where it is called, not where it is declared, and should include enough words to avoid ambiguity but no needless ones. Swift's *argument labels* let the call read like a phrase:
+The guidelines' central principle is *clarity at the point of use*. Names should read well where they're used, which is far more often than where they're declared. Swift's argument labels make that possible, letting a call read almost like an English phrase:
 
 ```swift
-names.insert("Ada", at: 0)
-let i = names.firstIndex(of: "Ada")
-words.remove(at: i)
+queue.insert(job, at: 0)
+let i = names.firstIndex(of: "Grace")
+text.replacing("colour", with: "color")
 ```
 
-Scope still matters for name length. A local loop variable might just be called `i`, and a closure parameter `$0`. A widely used function in a library deserves a longer, more descriptive name.
+Name length should follow scope. A loop index used for three lines can be `i`; a closure's argument can be `$0`; a public method used across a codebase deserves a full, descriptive name.
 
 ## 2.2. Declarations
 
-A *declaration* names a program entity and specifies some or all of its properties. The main kinds of declarations are `let` and `var` for constants and variables, `func` for functions, `struct`, `enum`, `class`, `actor`, and `protocol` for new types, `typealias` for alternative names for types, and `extension` for adding to existing types. In this chapter we'll discuss constants, variables, and types; functions are covered in Chapter 5, methods and extensions in Chapter 6, and protocols in Chapter 7.
+A *declaration* introduces a name and says what it refers to. Swift's main kinds of declarations are `let` and `var` for constants and variables, `func` for functions, `struct`, `enum`, `class`, `actor`, and `protocol` for types, `typealias` for alternative names of types, and `extension` for adding to existing types. This chapter covers constants, variables, and simple types; functions get Chapter 5, methods and extensions Chapter 6, and protocols Chapter 7.
 
-A Swift program is stored in one or more files whose names end in `.swift`. There is no fixed order of declarations within a file. A function may be called before its declaration appears, and a type may be used before its definition. The exception is `main.swift`, whose top-level code runs from top to bottom, so a top-level variable there must be declared before the statements that use it.
+A program's declarations can appear in any order. A function can be called above the point where it's declared, and a type can be used before its definition. The one exception is `main.swift`, whose top-level code runs in order, so a variable declared there must be declared before the code that uses it.
 
-For example, this program declares a constant, a variable, and a function:
+Here's a small program that computes a restaurant tip:
 
 ```swift
-// swiftpl/ch2/boiling
-// Boiling prints the boiling point of water.
+// swiftpl/ch2/tip
+// Tip prints the tip and total for a restaurant bill.
+import Foundation
 
-let boilingF = 212.0
-
-let f = boilingF
-let c = (f - 32) * 5 / 9
-print("boiling point = \(f)°F or \(c)°C")
+let bill = 48.50
+let rate = 0.18
+let tip = bill * rate
+print(String(format: "tip: $%.2f, total: $%.2f", tip, bill + tip))
 // Output:
-// boiling point = 212.0°F or 100.0°C
+// tip: $8.73, total: $57.23
 ```
 
-The constant `boilingF` is a global declaration, as are `f` and `c`. A global is visible throughout the module, which is fine for small programs. As programs grow, you'll want to organize code into functions and types, which keep names local.
-
-A function declaration has a name, a list of parameters (the variables whose values are provided by the function's callers), an optional result type, and a body that contains the statements that define what the function does. The result type is omitted if the function does not return anything. Execution of the function begins with the first statement and continues until it encounters a `return` statement or reaches the end of a function that has no result type. Control and any result are then returned to the caller.
-
-We've seen a fair number of functions already and there are lots more to come, including an extensive discussion in Chapter 5, so this is only a sketch. The function `fToC` below encapsulates the temperature conversion logic so that it is defined only once but may be used from multiple places. Here `main.swift` calls it twice, using the values of two different local constants:
+The three constants are declared at the top level of `main.swift`. That's fine in a script-sized program, but as programs grow, computations belong in functions, where their names are local and their inputs explicit. A function declaration gives a name, a list of *parameters*, an optional result type after `->`, and a body:
 
 ```swift
-// swiftpl/ch2/ftoc
-// Ftoc prints two Fahrenheit-to-Celsius conversions.
+// swiftpl/ch2/tip2
+// Tip2 prints tips for a bill at several rates.
+import Foundation
 
-let freezingF = 32.0
-let boilingF = 212.0
-print("\(freezingF)°F = \(fToC(freezingF))°C")  // "32.0°F = 0.0°C"
-print("\(boilingF)°F = \(fToC(boilingF))°C")  // "212.0°F = 100.0°C"
+let bill = 48.50
+for percent in [10, 18, 20] {
+    let t = tip(on: bill, rate: Double(percent) / 100)
+    print(String(format: "%d%%: $%.2f", percent, t))
+}
 
-func fToC(_ f: Double) -> Double {
-    (f - 32) * 5 / 9
+/// Returns the tip on an amount, rounded to the nearest cent.
+func tip(on amount: Double, rate: Double = 0.18) -> Double {
+    (amount * rate * 100).rounded() / 100
 }
 ```
 
-The underscore before the parameter name says that callers don't write an argument label, so the call is `fToC(212)` rather than `fToC(f: 212)`. Section 5.1 explains labels in full. Since the body of `fToC` consists of a single expression, the `return` keyword may be omitted; the value of the expression is the function's result.
+```
+10%: $4.85
+18%: $8.73
+20%: $9.70
+```
+
+Each parameter has an *argument label*, used by callers, and a *parameter name*, used in the body. Here `on` is the label and `amount` the name, so calls read `tip(on: bill)`. A parameter may also have a default value, like `rate`, which callers can omit. When a function's body is a single expression, its value is the result, and `return` may be left out. Section 5.1 covers all of this in detail.
 
 ## 2.3. Variables
 
-A `var` declaration creates a variable of a particular type, attaches a name to it, and sets its initial value. Each declaration has the general form
+A variable declaration has the general form
 
 ```swift
 var name: Type = expression
 ```
 
-Either the `: Type` or the `= expression` part may be omitted, but not both. If the type is omitted, it is inferred from the initializer expression. If the initializer is omitted, the variable must be assigned a value before it is first read.
+and either the type or the initial value, but not both, may be left out. Without a type, the type is inferred from the initial value. Without an initial value, the variable must be assigned before it's first read.
 
-This last point is one of the key differences between Swift and Go. Go gives every variable a *zero value* at declaration, so a variable is never uninitialized. Swift has no zero values. Instead, the compiler performs *definite initialization* analysis, and refuses to compile any program that might read a variable before it has been assigned:
+That last rule is enforced strictly. Many languages give an unassigned variable a default value (0, `nil`, or an empty string) or leave whatever bytes happen to be in memory. Swift does neither. Instead, the compiler performs *definite initialization* analysis, tracking every path through the code, and rejects any read that might happen before a write:
 
 ```swift
-var s: String
-if useGreeting {
-    s = "hello"
+var label: String
+if count > 0 {
+    label = "\(count) items"
 }
-print(s)  // compile error: variable 's' used before being initialized
+print(label)  // compile error: variable 'label' used before being initialized
 ```
 
-Every path to the `print` must assign `s` first. The rule applies equally to properties of structs and classes: an initializer must assign every stored property before the new value can be used. This catches a class of bugs that are subtle in languages where uninitialized memory holds garbage or where a forgotten initialization silently leaves a zero.
+Every path that reaches the `print` must assign `label`. The same rule governs initializers, which must give every stored property a value before the new instance can be used. The rule eliminates a whole category of bugs: reading garbage memory, or silently using a zero nobody meant.
 
-Optional variables are the one exception: a `var` of optional type with no initializer is implicitly initialized to `nil`.
+Optional variables are the exception. A `var` of optional type with no initial value starts out as `nil`:
 
 ```swift
-var name: String?  // implicitly nil
+var lastError: String?  // nil until something is assigned
 ```
 
-It is possible to declare and optionally initialize a set of variables in a single declaration, with a list of names, or with a *tuple pattern*:
+Several variables can be declared together, and a *tuple pattern* can unpack several values at once:
 
 ```swift
-var i, j, k: Int  // three Ints, not yet initialized
-var b = true, f = 2.3, s = "four"  // Bool, Double, String
-var (x, y) = (1, 2)  // destructure a tuple
+var width, height: Int  // two uninitialized Ints
+var name = "Ada", age = 36, member = true
+var (x, y) = (0.0, 1.0)
 ```
 
-The tuple form is especially useful with functions that return multiple values:
+The tuple form is especially handy with functions that return several values:
 
 ```swift
-let (data, response) = try await URLSession.shared.data(from: url)
+let (quotient, remainder) = 47.quotientAndRemainder(dividingBy: 5)
 ```
 
 ### 2.3.1. Constants
 
-A `let` declaration has the same forms as `var`, but the name it introduces can't be reassigned after its initialization:
+A `let` declaration has the same forms as `var`, but once its value is set it can never be reassigned:
 
 ```swift
-let maxRetries = 3
-maxRetries = 4  // compile error: cannot assign to value: 'maxRetries' is a 'let' constant
+let maxAttempts = 3
+maxAttempts = 4  // compile error: cannot assign to value: 'maxAttempts' is a 'let' constant
 ```
 
-Like a variable, a `let` constant need not be initialized at its declaration, so long as it is assigned exactly once on every path before it is used:
+A `let` needn't be initialized where it's declared, as long as every path assigns it exactly once before use. That makes it possible to choose a constant's value with ordinary control flow:
 
 ```swift
-let message: String
-if count == 0 {
-    message = "none"
+let greeting: String
+if hour < 12 {
+    greeting = "Good morning"
 } else {
-    message = "\(count) items"
+    greeting = "Good afternoon"
 }
 ```
 
-This is a common idiom: the compiler guarantees that `message` is initialized exactly once, and the reader knows it never changes afterwards.
+Prefer `let`, and use `var` only for things that really change. The compiler helps: it warns when a `var` is never modified. For value types, which include structs, enums, and all the standard collections, a `let` is completely immutable. A `let` array can't be appended to, and a `let` struct can't have any property changed. Section 2.3.2 explains the different meaning of `let` for reference types.
 
-Use `let` unless you need `var`. The compiler will warn about any `var` that is never mutated. In Swift, unlike in many languages, `let` constants are genuinely immutable when they hold value types: a `let` array can't have elements appended, and a `let` struct can't have its properties changed. We'll return to this distinction between values and references in Section 2.3.2.
-
-Note that Swift's `let` is not the same thing as Go's `const`. A Go constant is evaluated at compile time and can only hold basic types, while a Swift `let` may hold any value, computed at run time. We'll discuss Swift's compile-time literals in Section 3.6.
+Note that a `let` is not a compile-time constant in the sense of C's `#define` or Go's `const`: its value may be computed at run time, by any expression. Section 3.6 describes how Swift's literals provide many of the conveniences of compile-time constants.
 
 ### 2.3.2. Values, References, and `inout`
 
-Go programs use pointers routinely: to share a variable with a function that will update it, to avoid copying large structs, and to build linked data structures. Swift programs rarely use pointers. Instead, Swift divides types into two families with different semantics, and provides `inout` parameters for the remaining case.
+Many languages rely on pointers for three jobs: letting a function update its caller's variables, avoiding expensive copies of large data, and building linked structures. Swift handles all three without everyday pointers, by dividing types into two families with different behavior, and by providing `inout` parameters.
 
-A *value type* is one in which each variable holds its own independent copy of the data. Assignment, initialization, and argument passing all copy the value, at least logically. Structs, enums, and tuples are value types, as are all of the standard library's basic types and collections: `Int`, `Double`, `Bool`, `String`, `Array`, `Dictionary`, and `Set`.
+A *value type* gives each variable its own independent value. Assignment, initialization, and argument passing copy the value, at least logically. Structs, enums, and tuples are value types, and so are all of the standard library's basic types and collections: `Int`, `Double`, `Bool`, `String`, `Array`, `Dictionary`, and `Set`.
 
 ```swift
-var a = [1, 2, 3]
-var b = a  // b is an independent copy of a
-b.append(4)
-print(a)  // "[1, 2, 3]"
-print(b)  // "[1, 2, 3, 4]"
+var original = ["a", "b"]
+var copy = original
+copy.append("c")
+print(original)  // "["a", "b"]"
+print(copy)  // "["a", "b", "c"]"
 ```
 
-The copy is logical, not necessarily physical. Arrays, strings, and the other collections use *copy-on-write*: `b = a` merely shares the underlying storage, and the actual copy happens only if and when one of them is modified while the storage is shared. So passing a big array to a function costs about as much as passing a pointer. We'll look at the mechanism in Section 4.2.
+"Logically" is important here. The collections use *copy-on-write*: assignment shares the underlying storage, and a real copy is made only if one of the values is later modified while sharing. Passing a large array to a function is therefore as cheap as passing a pointer. Section 4.2 shows how this works.
 
-A *reference type* is one in which variables hold references to a shared instance. Classes, actors, and closures are reference types.
+A *reference type* gives variables references to a single shared instance. Classes and actors are reference types, as are closures:
 
 ```swift
-final class Counter {
-    var n = 0
+final class Session {
+    var requests = 0
 }
 
-let c1 = Counter()
-let c2 = c1  // c2 refers to the same object as c1
-c2.n += 1
-print(c1.n)  // "1"
+let s1 = Session()
+let s2 = s1  // the same session
+s2.requests += 1
+print(s1.requests)  // "1"
 ```
 
-Notice that `c1` and `c2` are `let` constants, yet we changed `n`. For a reference type, `let` fixes the *reference* (`c1` will always refer to this particular `Counter`) but not the object's contents. Two references are *identical* if they refer to the same instance, which the `===` operator tests: `c1 === c2` is `true`.
+`s1` and `s2` are `let` constants, yet `requests` changed. For a reference type, `let` fixes which object the name refers to, not the object's contents. The operator `===` tests whether two references refer to the same instance: `s1 === s2` is `true`.
 
-Classes are the right tool when identity matters, when something represents a single shared resource like a file, a network connection, or a cache. Most other data is better modeled with value types, which can't be modified behind your back by some other part of the program. Swift encourages you to reach for `struct` first.
+Classes suit things with *identity*, where everyone holding a reference should see the same changes: a network session, an open file, a cache shared across a program. Most other data is safer as a value, since nothing else can change it while you hold it. Swift encourages reaching for `struct` first.
 
-What about the remaining use of pointers: letting a function update a variable in its caller? That's what `inout` parameters do. An `inout` parameter is passed with an ampersand, and the function may modify it:
+That leaves the job of letting a function modify a variable in its caller, which is what `inout` parameters do:
 
 ```swift
-func incr(_ p: inout Int) -> Int {
-    p += 1  // increments the caller's variable
-    return p
+func applyInterest(to balance: inout Double, rate: Double) {
+    balance += balance * rate
 }
 
-var v = 1
-_ = incr(&v)  // side effect: v is now 2
-print(incr(&v))  // "3" (and v is 3)
+var savings = 1000.0
+applyInterest(to: &savings, rate: 0.05)
+print(savings)  // "1050.0"
 ```
 
-Semantically, `inout` is *copy-in, copy-out*: the function receives the value, modifies it, and the modified value is written back when the function returns. In practice the compiler passes the variable's address, so there's no copying. Either way, the effect is that the caller's variable changes.
+The `&` at the call site marks the argument that may be modified, so a reader can tell at a glance. Conceptually, the function receives a copy of the value and writes the result back when it returns; in practice, the compiler usually passes the variable's address. Only variables can be passed `inout`, not constants, literals, or the results of expressions.
 
-Swift is strict about `inout`. The argument must be a variable (not a `let`, a literal, or the result of an expression), and the `&` makes it obvious at the call site that the argument may change. Swift also enforces *exclusive access*: while a function holds an `inout` reference to a variable, no other code may access that same variable. This program, for example, does not compile:
+Swift also enforces *exclusive access* to `inout` arguments: while a function is modifying a variable through an `inout` parameter, nothing else may access that variable. So this doesn't compile:
 
 ```swift
-var total = 10
-func addTwice(_ x: inout Int, _ y: inout Int) { ... }
-addTwice(&total, &total)  // error: overlapping accesses to 'total'
+func transfer(_ amount: Double, from source: inout Double, to target: inout Double) {
+    source -= amount
+    target += amount
+}
+
+transfer(10, from: &savings, to: &savings)  // error: overlapping accesses to 'savings'
 ```
 
-Where the compiler can't prove the absence of overlapping access, it inserts a run-time check. The *Law of Exclusivity* rules out the aliasing bugs that make pointer-heavy code hard to reason about, and it gives the optimizer freedom to assume that an `inout` parameter is not modified by anything else during the call.
+When the compiler can't prove that accesses don't overlap, it inserts a check that runs while the program executes. This *Law of Exclusivity* rules out the confusing bugs that arise when two names secretly refer to the same memory, and lets the optimizer assume that an `inout` parameter isn't changed behind its back.
 
-Unsafe pointers exist too, with names like `UnsafeMutablePointer<Int>`, for interoperating with C and for low-level code. We'll study them in Chapter 13.
+Swift does have pointers, such as `UnsafeMutablePointer<Int>`, for working with C and other low-level code; Chapter 13 explains them.
 
-The `ArgumentParser` package, one of the most widely used Swift packages, is a good illustration of what value semantics and a few other features let you do. It parses command-line flags and arguments into the properties of a struct. Here's a version of `echo` that takes two optional flags: `-n` causes `echo` to omit the trailing newline that would normally be printed, and `-s sep` causes it to separate the output arguments by the contents of the string `sep` instead of the default single space.
+Value types also make a popular library possible. `ArgumentParser` turns a program's command-line arguments into the properties of a struct. Here's a greeting command that takes a name, an optional repetition count, and a flag:
 
 ```swift
-// swiftpl/ch2/echo4
-// Echo4 prints its command-line arguments.
+// swiftpl/ch2/greet
+// Greet greets someone, possibly more than once and possibly loudly.
 import ArgumentParser
 
 @main
-struct Echo4: ParsableCommand {
-    @Flag(name: .customShort("n"), help: "omit trailing newline")
-    var omitNewline = false
+struct Greet: ParsableCommand {
+    @Option(name: .shortAndLong, help: "how many times to greet")
+    var count = 1
 
-    @Option(name: .customShort("s"), help: "separator")
-    var sep = " "
+    @Flag(help: "greet loudly")
+    var shout = false
 
-    @Argument var words: [String] = []
+    @Argument(help: "who to greet")
+    var name = "world"
 
     func run() {
-        print(words.joined(separator: sep), terminator: omitNewline ? "" : "\n")
+        let greeting = "Hello, \(name)!"
+        for _ in 0..<count {
+            print(shout ? greeting.uppercased() : greeting)
+        }
     }
 }
 ```
 
-Because it uses `@main` rather than top-level code, this file must *not* be called `main.swift`; call it `Echo4.swift`. The package depends on `https://github.com/apple/swift-argument-parser` and its `ArgumentParser` product, declared in the manifest as in Section 1.7.
+This file uses `@main` rather than top-level code, so it must not be named `main.swift`; call it `Greet.swift`. The package depends on `https://github.com/apple/swift-argument-parser` and uses its `ArgumentParser` product, declared in the manifest as in Section 1.7.
 
-The struct conforms to the `ParsableCommand` protocol. Each of its stored properties is decorated with a *property wrapper*: `@Flag` for a Boolean flag, `@Option` for a flag that takes a value, and `@Argument` for positional arguments. A property wrapper is a type that attaches extra behavior to a property, in this case information about how to parse it. The initial values are the defaults. When the program starts, `ArgumentParser` creates an instance of `Echo4`, fills in its properties from the command line, and calls `run`.
-
-Let's run some test cases on `echo4`:
+The struct conforms to the `ParsableCommand` protocol, and each stored property carries a *property wrapper* describing how it's filled in from the command line: `@Option` for a named value, `@Flag` for a Boolean switch, and `@Argument` for a positional argument. The initial values are the defaults. When the program starts, `ArgumentParser` creates an instance of `Greet`, sets its properties from the arguments, and calls `run`:
 
 ```
 $ swift build
-$ .build/debug/echo4 a bc def
-a bc def
-$ .build/debug/echo4 -s / a bc def
-a/bc/def
-$ .build/debug/echo4 -n a bc def
-a bc def$
-$ .build/debug/echo4 --help
-USAGE: echo4 [-n] [-s <s>] [<words> ...]
+$ .build/debug/greet
+Hello, world!
+$ .build/debug/greet --count 2 Grace
+Hello, Grace!
+Hello, Grace!
+$ .build/debug/greet -c 1 --shout Ada
+HELLO, ADA!
+$ .build/debug/greet --help
+USAGE: greet [--count <count>] [--shout] [<name>]
 
 ARGUMENTS:
-  <words>
+  <name>                  who to greet (default: world)
 
 OPTIONS:
-  -n                      omit trailing newline
-  -s <s>                  separator (default:  )
+  -c, --count <count>     how many times to greet (default: 1)
+  --shout                 greet loudly
   -h, --help              Show help information.
 ```
 
-If the user supplies an invalid argument or flag, the program prints an error message and the usage, and exits with a non-zero status.
+Invalid arguments, such as a non-numeric count, produce an error message and the usage text, and the program exits with a failure status, all without any code of ours.
 
-The `?:` *conditional operator* in `omitNewline ? "" : "\n"` evaluates to `""` if `omitNewline` is true and to `"\n"` otherwise. In Swift 5.9 and later, `if` and `switch` can also be used as expressions, so you could equally write:
-
-```swift
-let terminator = if omitNewline { "" } else { "\n" }
-```
+The expression `shout ? greeting.uppercased() : greeting` uses the *conditional operator*: it evaluates to the second operand if the condition is true and the third otherwise. Since Swift 5.9, `if` and `switch` can also be used as expressions, so the same thing could be written `let line = if shout { greeting.uppercased() } else { greeting }`.
 
 ### 2.3.3. Initializers and `deinit`
 
-Every struct, class, and enum is created by an *initializer*, a special function named `init` that's called with the type's name: `Counter()`, `Point(x: 1, y: 2)`, `String(contentsOfFile: path, encoding: .utf8)`. Structs get a *memberwise initializer* for free, with one parameter per stored property. Classes don't, but a class whose stored properties all have default values gets an `init()` that takes no arguments, as `Counter` did above. You can write your own initializers too, as we'll see in Chapter 4 and Chapter 6.
+Every instance of a struct, class, or enum is created by an *initializer*, a special function named `init` and invoked through the type's name: `Session()`, `Point(x: 1, y: 2)`, `String(contentsOfFile: path, encoding: .utf8)`. A struct automatically gets a *memberwise initializer* with a parameter for each stored property. A class doesn't, but a class whose stored properties all have default values, like `Session`, gets an initializer with no parameters. Chapters 4 and 6 show how to write initializers of your own.
 
-Classes (but not structs) may also have a *deinitializer*, a `deinit` block that runs just before an instance is destroyed:
+A class may also define a *deinitializer*, `deinit`, which runs just before an instance is destroyed. It's the place to release resources the object owns:
 
 ```swift
 final class TempFile {
@@ -289,404 +291,369 @@ final class TempFile {
 
 ### 2.3.4. Lifetime of Variables
 
-The *lifetime* of a variable is the interval of time during which it exists as the program executes. The lifetime of a global variable is the entire execution of the program. Local variables, by contrast, have dynamic lifetimes: a new instance is created each time the declaration is executed, and the variable lives on until it is *unreachable*, at which point its storage may be recycled. Function parameters and results are local variables too; they are created each time their enclosing function is called.
+A variable's *lifetime* is the stretch of the program's execution during which it exists. A global variable lives for the whole run. A local variable comes into existence each time its declaration is executed and lives as long as anything can still use it; function parameters are local variables too, created afresh on each call.
 
-For value types, the compiler decides where variables live. Most locals are kept in registers or on the stack, but a local that's captured by an escaping closure, for example, must be moved to the heap, because it has to outlive the call that created it. As in Go, this is not something you need to think about to write correct programs, though it's worth keeping in mind during performance optimization.
+Where a value is stored is the compiler's decision. Most local values live in registers or on the stack, but a local variable captured by a closure that outlives the function, for example, must be moved to the heap. None of this affects whether a program is correct, though it can matter for performance.
 
-For reference types, Swift uses *automatic reference counting* (ARC) rather than a tracing garbage collector. Every class instance keeps a count of the strong references to it. The compiler inserts code to increment the count when a reference is copied and to decrement it when a reference goes away, and when the count drops to zero, the instance's `deinit` runs and its memory is freed, immediately and deterministically.
+Instances of classes live on the heap and are managed by *automatic reference counting* (ARC). Each instance counts the strong references to it. Copying a reference increments the count, dropping one decrements it, and when the count reaches zero, the instance's `deinit` runs and its memory is freed, immediately and predictably, not at some later collection:
 
 ```swift
 do {
-    let f = TempFile(path: "/tmp/scratch")
-    ...
-}  // f goes out of scope here; deinit runs and the file is removed
+    let scratch = TempFile(path: "/tmp/scratch")
+    // ...use scratch...
+}  // the last reference disappears here: deinit runs and the file is removed
 ```
 
-The price of reference counting is that it can't reclaim *cycles*. If object A holds a strong reference to object B and B holds one back to A, neither count ever reaches zero, and both leak. You break such cycles by making one of the references `weak` (which doesn't contribute to the count and becomes `nil` when the object is freed) or `unowned` (which doesn't contribute to the count and traps if used after the object is freed):
+Reference counting has one blind spot: *cycles*. If object A holds a strong reference to B and B holds one back to A, neither count can reach zero, and both objects leak. Cycles are broken by making one of the references `weak`, which doesn't count toward keeping the object alive and becomes `nil` when the object is freed, or `unowned`, which doesn't count either and is assumed never to outlive its object:
 
 ```swift
-final class Node {
-    var children: [Node] = []
-    weak var parent: Node?  // weak to avoid a cycle with children
+final class TreeNode {
+    var children: [TreeNode] = []
+    weak var parent: TreeNode?  // weak, so parent and children don't keep each other alive
 }
 ```
 
-A related trap involves closures. A closure stored in a property of an object, that refers to `self`, creates a cycle. The usual fix is a *capture list*, `{ [weak self] in ... }`, which we'll see in Chapter 5.
+Closures can form cycles too: an object that stores a closure that refers back to the object. The usual cure is a *capture list*, `{ [weak self] in ... }`, described in Section 5.6.
 
 ## 2.4. Assignments
 
-The value held by a variable is updated by an assignment statement, which in its simplest form has a variable on the left of the `=` sign and an expression on the right.
+An assignment statement updates the value of a variable, or of some part of one:
 
 ```swift
-x = 1  // named variable
-p.x = 1  // property of a struct or class
-a[i] = 1  // element of an array, dictionary, or other collection
-counts[k, default: 0] = 1  // subscript with extra arguments
+total = 0  // a variable
+session.requests = 0  // a property of an instance
+scores[2] = 97  // an element of an array or dictionary
+stock["figs", default: 0] = 12  // a subscript with extra arguments
 ```
 
-Unlike in C, an assignment is a statement, not an expression, and produces no value. That rules out the classic bug `if x = y` for `if x == y`, which is a compile error in Swift.
+In Swift, assignment is a statement, not an expression; it produces no value. So the classic C typo `if x = 0` is a compile-time error instead of a silent bug.
 
-Each of the arithmetic and bitwise binary operators has a corresponding *assignment operator* allowing, for example, the last statement to be rewritten as
+Each arithmetic and bitwise operator has an *assignment operator* form, which updates a variable in place without repeating its name or re-evaluating the expression that locates it:
 
 ```swift
-count[x] *= scale
+scores[index(of: player)] += 5
 ```
 
-which saves us from having to repeat (and re-evaluate) the expression for the variable. Swift has no increment or decrement operators; `v += 1` and `v -= 1` take their place.
+`+= 1` and `-= 1` take the place of the `++` and `--` operators found in other languages; Swift removed them because they encouraged hard-to-read expressions.
 
-Assignment to a property or element of a value type works through as many levels as needed: `points[i].x += 1` modifies the `x` of the `i`th element of the array in place. Swift handles this by treating each level as an `inout` access, so `points` must be a `var`.
+Assignments can reach as deep into a value as needed. `orders[i].customer.address.city = "Leeds"` changes one property of a struct nested inside a struct inside an array element, in place, without copying anything else, provided `orders` is a `var`.
 
 ### 2.4.1. Tuple Assignment
 
-Another form of assignment, *tuple assignment*, allows several variables to be assigned at once. All of the right-hand side expressions are evaluated before any of the variables are updated, making this form most useful when some of the variables appear on both sides of the assignment, as happens, for example, when swapping the values of two variables:
+A *tuple assignment* updates several variables at once. Every expression on the right is evaluated before any variable on the left changes, which makes it the natural way to express values that depend on each other's old values. Swapping two variables is the simplest case:
 
 ```swift
-(x, y) = (y, x)
+(left, right) = (right, left)
 ```
 
-Since this is so common, the standard library also has a `swap` function, `swap(&x, &y)`, and arrays have a `swapAt` method that swaps two elements: `a.swapAt(i, j)`.
-
-Tuple assignment also helps to compute the greatest common divisor (GCD) of two integers:
+The same works for any number of values. Here three variables rotate, each taking the value of the next:
 
 ```swift
-func gcd(_ x: Int, _ y: Int) -> Int {
-    var (x, y) = (x, y)
-    while y != 0 {
-        (x, y) = (y, x % y)
-    }
-    return x
+var (first, second, third) = ("red", "green", "blue")
+(first, second, third) = (second, third, first)
+print(first, second, third)  // "green blue red"
+```
+
+and here a single pass over an array tracks its smallest and largest values together:
+
+```swift
+var (low, high) = (Int.max, Int.min)
+for reading in [17, 4, 22, 9] {
+    (low, high) = (min(low, reading), max(high, reading))
 }
+print(low, high)  // "4 22"
 ```
 
-Function parameters are constants, so we copy them into local variables with the same names before changing them. This kind of shadowing is common and harmless.
+For swapping two variables there's also the library function `swap(&a, &b)`, and for swapping two array elements in place, `a.swapAt(i, j)`.
 
-Or to compute the *n*th Fibonacci number iteratively:
+Tuples returned from functions can be unpacked by assignment, or kept whole and accessed by label:
 
 ```swift
-func fib(_ n: Int) -> Int {
-    var (x, y) = (0, 1)
-    for _ in 0..<n {
-        (x, y) = (y, x + y)
-    }
-    return x
-}
+let result = 47.quotientAndRemainder(dividingBy: 5)
+print(result.quotient, result.remainder)  // "9 2"
 ```
 
-Certain expressions produce several values. When such a call is used in an assignment, the left-hand side must have as many variables as the function has results:
+When a function returns a value you don't need, the compiler warns that it's unused. Assigning it to `_` says that ignoring it is deliberate:
 
 ```swift
-let (quotient, remainder) = 17.quotientAndRemainder(dividingBy: 5)
+_ = cache.removeValue(forKey: staleKey)
 ```
 
-Tuples may also have labeled elements, so the same result can be used without destructuring:
-
-```swift
-let qr = 17.quotientAndRemainder(dividingBy: 5)
-print(qr.quotient, qr.remainder)  // "3 2"
-```
-
-If a function returns a value that you don't need, the compiler will usually warn that the result is unused. Assign it to the blank identifier `_` to make it clear that the discard is deliberate:
-
-```swift
-_ = incr(&v)
-```
-
-A function whose result is often ignored can be marked `@discardableResult` to suppress the warning; `Array.removeFirst()` and `Dictionary.updateValue(_:forKey:)` are two examples.
+Functions whose results are routinely ignored can be declared `@discardableResult`, which suppresses the warning; `removeLast()` on arrays is one.
 
 ### 2.4.2. Assignability
 
-Assignment statements are an explicit form of assignment, but there are many places in a program where an assignment occurs *implicitly*: a function call implicitly assigns the argument values to the corresponding parameters; a `return` statement implicitly assigns the operands to the result; and a literal expression for a collection implicitly assigns each of its elements:
+Assignments also happen implicitly: when an argument is passed to a parameter, when a function returns a value, and when the elements of a collection literal are stored:
 
 ```swift
-let medals = ["gold", "silver", "bronze"]
+let primaries = ["red", "green", "blue"]  // each element is assigned into the array
 ```
 
-The elements of an array literal must all have the same type, which is inferred from the elements, here `String`.
+In every case, explicit or implicit, the value must be *assignable* to the type of its destination. Swift's rule is that the types must match exactly, with a few specific exceptions: a value of type `T` can be assigned to `T?`, wrapping it automatically; an instance of a class can be assigned to a variable of one of its superclasses; and a value can be assigned to a variable of a protocol type it conforms to (Chapter 7). There are *no* implicit numeric conversions, not even widening ones. An `Int32` can't be assigned to an `Int64` without writing `Int64(x)`.
 
-For an assignment, explicit or implicit, to be legal, the value must be *assignable* to the type of the variable. The rule is simple: the types must match exactly, with a few deliberate exceptions. A value of type `T` may be assigned to a variable of type `T?` (it's wrapped automatically); a class instance may be assigned to a variable of one of its superclasses; and a value may be assigned to a variable of a protocol type that it conforms to (Chapter 7). There are no implicit numeric conversions at all: an `Int` cannot be assigned to an `Int64` or a `Double` variable without an explicit conversion.
-
-Whether two values may be compared with `==` and `!=` is related to assignability: they must be of the same type, and the type must conform to the `Equatable` protocol. As with assignability, we'll explain the cases as we encounter each new type.
+Comparison follows similar rules. `==` and `!=` require two operands of the same type, and that type must conform to the `Equatable` protocol. Each new type in later chapters will say whether and how its values can be compared.
 
 ## 2.5. Type Declarations
 
-The type of a variable or expression defines the characteristics of the values it may take on, such as their size, how they are represented internally, the intrinsic operations that can be performed on them, and the methods associated with them.
+A type tells you how a value is represented and what you can do with it. Often, though, several different concepts share a representation. A `Double` might be a price, a distance, or an angle; a `String` might be a username or a password. Mixing up such values is a classic source of bugs, and the type system can help prevent it, if the concepts have types of their own.
 
-In any program there are variables that share the same representation but signify very different concepts. For instance, an `Int` could be used to represent a loop index, a timestamp, a file descriptor, or a month; a `Double` could represent a velocity or a temperature on one of several scales; and a `String` could represent a password or the name of a color.
-
-Swift offers two ways to give a name to a type, and they have quite different effects. A `typealias` declaration merely introduces an alternative name for an existing type:
+Swift has two ways to name a type. A `typealias` merely gives an existing type another name:
 
 ```swift
-typealias Celsius = Double
-typealias Fahrenheit = Double
+typealias Kilometers = Double
+typealias Miles = Double
 ```
 
-`Celsius` and `Fahrenheit` are now just other spellings of `Double`. They can make declarations easier to read, but they provide no protection: you can freely mix `Celsius` and `Fahrenheit` values in an expression, which is exactly the mistake we'd like to prevent. Type aliases are useful mainly for abbreviating long generic types, such as `typealias Handler = @Sendable (Request) async throws -> Response`.
+This documents intent, but protects nothing: since `Kilometers` and `Miles` are both just `Double`, the compiler will happily add one to the other. Type aliases are most useful for shortening long types, such as `typealias Handler = @Sendable (Request) async throws -> Response`.
 
-To define a *new* type that has the same representation as an existing type but is distinct from it, wrap the existing type in a struct. A struct with a single stored property costs nothing at run time: it has exactly the same size and layout as the property it wraps.
+To make a genuinely new type with the same representation as an existing one, wrap it in a struct. A single-property struct costs nothing at run time, since it's laid out exactly like the property it contains:
 
 ```swift
-// swiftpl/ch2/tempconv0
-// Package tempconv performs Celsius and Fahrenheit temperature computations.
+// swiftpl/ch2/distance0
+// Distance0 defines distinct types for kilometers and miles.
 
-struct Celsius {
+struct Kilometers {
     var value: Double
 }
 
-struct Fahrenheit {
+struct Miles {
     var value: Double
 }
 
-let absoluteZeroC = Celsius(value: -273.15)
-let freezingC = Celsius(value: 0)
-let boilingC = Celsius(value: 100)
+let marathon = Kilometers(value: 42.195)
 
-func cToF(_ c: Celsius) -> Fahrenheit {
-    Fahrenheit(value: c.value * 9 / 5 + 32)
+func kmToMiles(_ k: Kilometers) -> Miles {
+    Miles(value: k.value / 1.609344)
 }
 
-func fToC(_ f: Fahrenheit) -> Celsius {
-    Celsius(value: (f.value - 32) * 5 / 9)
+func milesToKm(_ m: Miles) -> Kilometers {
+    Kilometers(value: m.value * 1.609344)
 }
 ```
 
-This module defines two types, `Celsius` and `Fahrenheit`, for the two units of temperature. Even though both have the same underlying representation, they are not the same type, so they cannot be compared or combined in arithmetic expressions. Distinguishing the types makes it possible to avoid errors like inadvertently combining temperatures in the two different scales; an explicit conversion like `cToF` is required to convert from one to the other.
+Now distances in different units can't be combined by accident; converting between them requires an explicit call to `kmToMiles` or `milesToKm`. (History has examples of what happens otherwise: a spacecraft has been lost to a mix-up between metric and imperial units in software.)
 
-This is more verbose than we'd like, and a temperature that can't be added to another temperature isn't very useful. Swift lets us fix both problems. First, a type can describe how it should be created from a literal, by conforming to a protocol such as `ExpressibleByFloatLiteral`. Second, a type can define *operators*, like `+` and `<`, as static functions. Third, it can describe how it should be printed by conforming to `CustomStringConvertible` and supplying a `description` property. Here's a fuller version, using *extensions* to add each capability:
+As written, though, the types are awkward: you can't write a distance as a plain literal, add two distances, or print one nicely. Swift lets the types opt in to each of those abilities by conforming to protocols, which we'll add in *extensions*:
 
 ```swift
-extension Celsius: ExpressibleByFloatLiteral, ExpressibleByIntegerLiteral {
+extension Kilometers: ExpressibleByFloatLiteral, ExpressibleByIntegerLiteral {
     init(floatLiteral value: Double) { self.value = value }
     init(integerLiteral value: Int) { self.value = Double(value) }
 }
 
-extension Celsius: Comparable {
-    static func + (a: Celsius, b: Celsius) -> Celsius { Celsius(value: a.value + b.value) }
-    static func - (a: Celsius, b: Celsius) -> Celsius { Celsius(value: a.value - b.value) }
-    static func < (a: Celsius, b: Celsius) -> Bool { a.value < b.value }
+extension Kilometers: Comparable {
+    static func + (a: Kilometers, b: Kilometers) -> Kilometers { Kilometers(value: a.value + b.value) }
+    static func - (a: Kilometers, b: Kilometers) -> Kilometers { Kilometers(value: a.value - b.value) }
+    static func < (a: Kilometers, b: Kilometers) -> Bool { a.value < b.value }
 }
 
-extension Celsius: CustomStringConvertible {
-    var description: String { "\(value)°C" }
+extension Kilometers: CustomStringConvertible {
+    var description: String { "\(value) km" }
 }
 ```
 
-Now `Celsius` values can be written as literals and combined:
+With these, kilometers behave like numbers, but only with each other:
 
 ```swift
-let c: Celsius = 100
-print(c - absoluteZeroC)  // "373.15°C"
-let f = cToF(c)
-print(c == f)  // compile error: binary operator '==' cannot be applied to 'Celsius' and 'Fahrenheit'
+let warmup: Kilometers = 3
+print(marathon + warmup)  // "45.195 km"
+print(warmup < marathon)  // "true"
+let m = kmToMiles(marathon)
+print(marathon == m)  // compile error: '==' cannot be applied to 'Kilometers' and 'Miles'
 ```
 
-The `Comparable` protocol requires `<` and, through its parent protocol `Equatable`, `==`. We didn't write `==`; for a struct whose stored properties are all `Equatable`, the compiler synthesizes it automatically. Conversion functions like `cToF` don't change the value or its representation, but they make the change of meaning explicit.
+`Comparable` requires `<`, and, through its parent protocol `Equatable`, `==`; the compiler writes `==` for us, since every stored property of the struct is itself `Equatable`. The `description` property, required by `CustomStringConvertible`, controls how a value looks when it's printed or interpolated into a string, which is why `print` shows `45.195 km`.
 
-Many types declare a `description` property of this form because it controls how values of the type appear when printed by `print` or interpolated into a string:
-
-```swift
-let c = fToC(Fahrenheit(value: 212))
-print(c)  // "100.0°C"
-print("Water boils at \(c)")  // "Water boils at 100.0°C"
-```
-
-Extensions, operators, and protocol conformances are the subjects of Chapters 6 and 7, so don't worry if their details are not yet clear.
+Extensions, operators, and protocols are covered in Chapters 6 and 7; for now, the point is that a few lines turn a raw number into a type with its own meaning.
 
 ## 2.6. Modules and Files
 
-Modules in Swift serve the same purposes as libraries or packages in other languages, supporting modularity, encapsulation, separate compilation, and reuse. The source code for a module resides in one or more `.swift` files, usually in a directory whose name is the name of the module. Within a package, each module is a *target*. A package may contain several targets, which may depend on each other.
+Code is organized into *modules*. A module is a set of Swift source files compiled together, usually kept in one directory; all the files of a module share a namespace, and each module's `public` declarations form its interface to other modules. In the Swift Package Manager, each module is a *target*, and a *package* may contain several targets that depend on each other.
 
-Each module serves as a separate *namespace* for its declarations. Within the `Foundation` module, for example, the type `URL` is just `URL`, and so it is in any file that imports `Foundation`. If two imported modules both declare a `URL`, you can disambiguate by qualifying the name with the module: `Foundation.URL`.
+Module names keep declarations from colliding. Two modules can each declare a type named `Distance`; a file importing both can tell them apart by qualifying the name with the module, as `Geometry.Distance`.
 
-Access control lets us hide information. An `internal` declaration (the default) is visible in every file of its module but not outside it. Only `public` declarations are visible to clients.
-
-To illustrate the basics, suppose that our temperature conversion software has become popular and we want to make it available to the Swift community as a new module. How do we do that?
-
-Let's create a package called `tempconv` with a library target, also called `TempConv` (module names conventionally use `UpperCamelCase`), and an executable that uses it. The manifest lists both targets:
+Let's turn our distance types into a reusable library. The package will contain a library target, `Distance`, and a command-line tool, `dist`, that uses it:
 
 ```swift
 // swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
-    name: "tempconv",
+    name: "distance",
     products: [
-        .library(name: "TempConv", targets: ["TempConv"]),
+        .library(name: "Distance", targets: ["Distance"]),
     ],
     targets: [
-        .target(name: "TempConv"),
-        .executableTarget(name: "cf", dependencies: ["TempConv"]),
+        .target(name: "Distance"),
+        .executableTarget(name: "dist", dependencies: ["Distance"]),
     ]
 )
 ```
 
-The library's source code is in two files, to show how declarations in separate files of a module are accessed. We put the declarations of the types and their literal conformances in one file:
+The library has two source files, to show that declarations in one file of a module are visible in the others without any imports. The types go in one file:
 
 ```swift
-// swiftpl/ch2/tempconv/Sources/TempConv/TempConv.swift
-// Package TempConv performs Celsius and Fahrenheit conversions.
+// swiftpl/ch2/distance/Sources/Distance/Distance.swift
+// Package Distance provides distinct types for distances in kilometers and miles.
+import Foundation
 
-public struct Celsius: Hashable, Sendable {
+public struct Kilometers: Hashable, Sendable {
     public var value: Double
     public init(_ value: Double) { self.value = value }
 }
 
-public struct Fahrenheit: Hashable, Sendable {
+public struct Miles: Hashable, Sendable {
     public var value: Double
     public init(_ value: Double) { self.value = value }
 }
 
-extension Celsius {
-    public static let absoluteZero = Celsius(-273.15)
-    public static let freezing = Celsius(0)
-    public static let boiling = Celsius(100)
+extension Kilometers {
+    public static let marathon = Kilometers(42.195)
+    public static let halfMarathon = Kilometers(21.0975)
 }
 
-extension Celsius: CustomStringConvertible {
-    public var description: String { "\(value)°C" }
+extension Kilometers: CustomStringConvertible {
+    public var description: String { String(format: "%.2f km", value) }
 }
 
-extension Fahrenheit: CustomStringConvertible {
-    public var description: String { "\(value)°F" }
+extension Miles: CustomStringConvertible {
+    public var description: String { String(format: "%.2f mi", value) }
 }
 ```
 
-and the conversion functions in another:
+and the conversions in another:
 
 ```swift
-// swiftpl/ch2/tempconv/Sources/TempConv/Conv.swift
+// swiftpl/ch2/distance/Sources/Distance/Convert.swift
 
-/// Converts a Celsius temperature to Fahrenheit.
-public func cToF(_ c: Celsius) -> Fahrenheit {
-    Fahrenheit(c.value * 9 / 5 + 32)
+/// The number of kilometers in one international mile.
+let kilometersPerMile = 1.609344
+
+/// Converts a distance in kilometers to miles.
+public func kmToMiles(_ k: Kilometers) -> Miles {
+    Miles(k.value / kilometersPerMile)
 }
 
-/// Converts a Fahrenheit temperature to Celsius.
-public func fToC(_ f: Fahrenheit) -> Celsius {
-    Celsius((f.value - 32) * 5 / 9)
+/// Converts a distance in miles to kilometers.
+public func milesToKm(_ m: Miles) -> Kilometers {
+    Kilometers(m.value * kilometersPerMile)
 }
 ```
 
-Every type, initializer, property, and function that a client needs is marked `public`. Notice in particular the explicit `public init`: the memberwise initializer that the compiler synthesizes for a struct is only `internal`, so a public struct that clients should be able to create needs a public initializer written by hand. This is a deliberate design choice: the struct's author must opt in to making its representation part of its public interface.
+Everything a client needs is marked `public`. That includes the initializers: the memberwise initializer the compiler writes for a struct is only `internal`, so a public struct whose clients should be able to create values needs a public initializer written out by hand. The extra step is intentional, since a struct's stored properties become part of its public interface only when its author says so. The constant `kilometersPerMile`, on the other hand, is left `internal`: clients don't need it, and keeping it hidden leaves us free to change it.
 
-The constants are written as *static properties* of `Celsius` rather than as globals. Clients write `Celsius.boiling`, or just `.boiling` wherever the type is known, which avoids cluttering the global namespace. The conformances to `Hashable` and `Sendable` are synthesized by the compiler; we'll explain them in Chapters 4 and 9.
+Well-known distances are *static properties* of `Kilometers` rather than global constants, so clients write `Kilometers.marathon`, or just `.marathon` where the type is clear from context. The conformances to `Hashable` and `Sendable`, which let distances serve as dictionary keys (Chapter 4) and be shared between concurrent tasks (Chapter 9), are written by the compiler.
 
 ### 2.6.1. Imports
 
-Within a Swift program, every module is identified by its name, like `Foundation` or `TempConv`. To use the public declarations of another module from a file, you must `import` that module in that file:
+To use another module's public declarations, a file `import`s it:
 
 ```swift
-// swiftpl/ch2/tempconv/Sources/cf/main.swift
-// Cf converts its numeric argument to Celsius and Fahrenheit.
+// swiftpl/ch2/distance/Sources/dist/main.swift
+// Dist converts each numeric argument between kilometers and miles.
+import Distance
 import Foundation
-import TempConv
 
 for arg in CommandLine.arguments.dropFirst() {
-    guard let t = Double(arg) else {
-        FileHandle.standardError.write(Data("cf: invalid number: \(arg)\n".utf8))
+    guard let x = Double(arg) else {
+        FileHandle.standardError.write(Data("dist: not a number: \(arg)\n".utf8))
         exit(1)
     }
-    let f = Fahrenheit(t)
-    let c = Celsius(t)
-    print("\(f) = \(fToC(f)), \(c) = \(cToF(c))")
+    let k = Kilometers(x)
+    let m = Miles(x)
+    print("\(k) = \(kmToMiles(k)), \(m) = \(milesToKm(m))")
 }
 ```
 
-The import declaration makes the module's public names available throughout the file, without qualification. Imports are per file: importing `Foundation` in one file of a module doesn't make it available in the others. It is an error to import a module that the target doesn't depend on in its manifest.
-
 ```
-$ swift run cf 32
-32.0°F = 0.0°C, 32.0°C = 89.6°F
-$ swift run cf 212
-212.0°F = 100.0°C, 212.0°C = 413.6°F
-$ swift run cf -40
--40.0°F = -40.0°C, -40.0°C = -40.0°F
+$ swift run dist 5 26.2
+5.00 km = 3.11 mi, 5.00 mi = 8.05 km
+26.20 km = 16.28 mi, 26.20 mi = 42.16 km
 ```
 
-An unused import is not an error in Swift, unlike in Go, but it does slow compilation slightly, and the formatter and linters can be configured to flag it.
+An `import` makes the module's public names available throughout one file, with no qualification needed. Imports are per file: importing `Foundation` in one file of a module doesn't make it available in the others. A target can import only modules it depends on in the manifest.
 
 ### 2.6.2. Module Initialization
 
-Swift has no equivalent of Go's `init` functions, which run when a package is loaded. Instead, global variables and static properties are *lazily* initialized: each is initialized the first time it is accessed, not when the program starts. The initialization is guaranteed to happen exactly once, even if several threads access the variable for the first time simultaneously. The exception is top-level code in `main.swift`, whose variables are initialized in order as the code executes.
+Some languages run initialization code when a module or package is loaded. Swift doesn't. Instead, every global variable and static property is initialized *lazily*, on its first use, and the language guarantees that this happens exactly once, even if several threads reach the variable at the same moment. (Top-level variables in `main.swift` are the exception; they're initialized in order as the top-level code runs.)
 
-Lazy initialization means that programs start quickly, since no work is done for globals that are never used, and that the order in which modules are loaded can never matter.
+Lazy initialization means that a program never pays for globals it doesn't use, and that the order in which modules happen to be loaded can never affect the result.
 
-For some variables, like tables of data, an initializer expression may not be the simplest way to set its initial value. In that case, initialize it with a *closure expression* that is called immediately. For example, the following file defines a function `popCount` that returns the number of set bits (bits whose value is 1) in a `UInt64` value, which is called its *population count*. It uses a table built once, the first time it's needed, to precompute the result for each possible 8-bit value, so that `popCount` needn't take 64 steps but can just return the sum of eight table lookups. (This is definitely *not* the fastest algorithm for counting bits; it's just a convenient illustration.)
+When a global's initial value takes more than one expression to compute, use a closure that's called immediately, or any other expression that produces the value. Here's an example: a function that computes the CRC-32 checksum, used in ZIP files, PNG images, and Ethernet frames to detect corrupted data. The fast way to compute it uses a table of 256 precomputed values, one for each possible byte, and the table is a perfect candidate for a lazily initialized global:
 
 ```swift
-// swiftpl/ch2/popcount
-// pc[i] is the population count of i.
-let pc: [UInt8] = {
-    var table = [UInt8](repeating: 0, count: 256)
-    for i in 0..<256 {
-        table[i] = table[i / 2] + UInt8(i & 1)
+// swiftpl/ch2/crc32
+/// crcTable[n] is the CRC-32 of the single byte n, used to process input a byte at a time.
+let crcTable: [UInt32] = (0..<256).map { n in
+    var c = UInt32(n)
+    for _ in 0..<8 {
+        c = c & 1 != 0 ? 0xEDB8_8320 ^ (c >> 1) : c >> 1
     }
-    return table
-}()
-
-/// Returns the population count (number of set bits) of x.
-func popCount(_ x: UInt64) -> Int {
-    var n = 0
-    for shift in stride(from: 0, to: 64, by: 8) {
-        n += Int(pc[Int((x >> UInt64(shift)) & 0xFF)])
-    }
-    return n
+    return c
 }
+
+/// Returns the CRC-32 checksum of the bytes.
+func crc32(_ bytes: some Sequence<UInt8>) -> UInt32 {
+    var crc: UInt32 = 0xFFFF_FFFF
+    for b in bytes {
+        crc = crcTable[Int((crc ^ UInt32(b)) & 0xFF)] ^ (crc >> 8)
+    }
+    return crc ^ 0xFFFF_FFFF
+}
+
+print(String(crc32("hello".utf8), radix: 16))  // "3610a686"
 ```
 
-The braces after `=` define a closure, an anonymous function, and the `()` after the closing brace calls it. The closure's result becomes the initial value of `pc`. Because `pc` is a global in a file other than `main.swift`, the closure runs only the first time `pc` is used.
+The table is built by `map` over the range `0..<256`, with a closure that computes each entry from the polynomial `0xEDB88320`; the details of the arithmetic, a bitwise form of polynomial division, don't matter here. What does matter is when it runs: because `crcTable` is a global in a file other than `main.swift`, the table is built the first time `crc32` uses it, and never again, however many checksums are computed or tasks compute them.
 
-Of course, in real code you wouldn't write this function at all: every integer type has a property `nonzeroBitCount` that the compiler turns into the machine's population-count instruction where one exists.
+The parameter type `some Sequence<UInt8>` means that `crc32` accepts any sequence of bytes, such as an array, a string's UTF-8 view, or a `Data` value. Section 7.5 explains this notation.
 
-**Exercise 2.1:** Add a `Kelvin` type to `TempConv`, with conversion functions to and from the other two scales. Absolute zero is 0 K, and an increase of 1 K is the same as an increase of 1°C.
+**Exercise 2.1:** Add `Meters` and `Feet` types to the `Distance` module, with conversions between all four units. How many conversion functions does that take? Can you find a design that needs fewer?
 
-**Exercise 2.2:** Write a general-purpose unit-conversion program analogous to `cf` that reads numbers from its command-line arguments or from the standard input if there are no arguments, and converts each number into units like temperature in Celsius and Fahrenheit, length in feet and meters, weight in pounds and kilograms, and the like.
+**Exercise 2.2:** Make `dist` read numbers from the standard input, one per line, when it's given no arguments, and accept an optional unit suffix (`5km`, `3mi`) that limits the output to the conversion out of that unit.
 
-**Exercise 2.3:** Rewrite `popCount` to use a loop instead of the explicit sum of eight lookups. Compare the performance of the two versions. (Section 11.4 shows how to compare the performance of different implementations systematically.)
+**Exercise 2.3:** Write a command, `cksum32`, that prints the CRC-32 of each file named on its command line, in hexadecimal. Compare its results with another tool, such as `crc32` or Python's `zlib.crc32`.
 
-**Exercise 2.4:** Write a version of `popCount` that counts bits by shifting its argument through 64 bit positions, testing the rightmost bit each time. Compare its performance to the table-lookup version and to `nonzeroBitCount`.
-
-**Exercise 2.5:** The expression `x & (x - 1)` clears the rightmost non-zero bit of `x`. Write a version of `popCount` that counts bits by using this fact, and assess its performance.
+**Exercise 2.4:** Write a version of `crc32` that uses no table, processing each byte bit by bit as the table-building closure does. Measure how much slower it is. (Section 11.4 shows how to compare the performance of implementations systematically.)
 
 ## 2.7. Scope
 
-A declaration associates a name with a program entity, such as a function or a variable. The *scope* of a declaration is the part of the source code where a use of the declared name refers to that declaration.
+The *scope* of a declaration is the region of source code in which its name refers to it. Scope is a property of the program text, determined at compile time. Don't confuse it with *lifetime*, the stretch of execution during which a variable exists, which is a run-time property.
 
-Don't confuse scope with lifetime. The scope of a declaration is a region of the program text; it is a compile-time property. The lifetime of a variable is the range of time during execution when the variable can be referred to by other parts of the program; it is a run-time property.
+A *block* is a sequence of statements in braces, such as the body of a function, a loop, or an `if`. A name declared in a block is visible only from its declaration to the end of the block.
 
-A syntactic *block* is a sequence of statements enclosed in braces like those that surround the body of a function, a loop, or an `if` statement. A name declared inside a block is not visible outside that block. The block encloses its declarations and determines their scope.
+Across a module, the scopes nest like this: declarations of the standard library and imported modules are visible in each file that imports them; types, functions, and global variables are visible throughout their module (unless they're `private` or `fileprivate`); and local declarations are visible from their declaration to the end of their block. Unlike global names, local variables must be declared before they're used.
 
-At the top level, declarations of the standard library and imported modules are visible in the files that import them. Declarations of types, functions, and global variables in a module are visible throughout that module (subject to `private` and `fileprivate`). Declarations inside a function body are visible from the point of declaration to the end of the enclosing block. Unlike globals, local variables must be declared before they are used.
-
-When the compiler encounters a reference to a name, it looks for a declaration, starting with the innermost enclosing block and working up to the module and finally to imported modules. If the compiler finds no declaration, it reports an "undeclared identifier" error. If a name is declared in both an outer block and an inner block, the inner declaration will be found first. In that case, the inner declaration is said to *shadow* or *hide* the outer one, making it inaccessible:
+To resolve a name, the compiler searches outward from the innermost block, through enclosing blocks, the module, and finally imported modules, and uses the first declaration it finds. If an inner block declares the same name as an outer one, the inner declaration *shadows* the outer one within its scope:
 
 ```swift
-func f() {}
+func render() {}
 
-let g = "g"
+let theme = "light"
 
 func example() {
-    let f = "f"
-    print(f)  // "f"; local let f shadows module-level func f
-    print(g)  // "g"; module-level let
-    print(h)  // compile error: cannot find 'h' in scope
+    let render = "draft"
+    print(render)  // "draft": the local constant shadows the module-level function
+    print(theme)  // "light": the module-level constant
+    print(undefinedName)  // compile error: cannot find 'undefinedName' in scope
 }
 ```
 
-Within a single block, however, a name may be declared only once; redeclaring it is an error. This differs from Go's `:=`, which can quietly declare a new variable when you meant to assign to an existing one.
+A name can be declared only once in any one block; a second declaration in the same block is an error, which prevents many accidental redeclarations.
 
-Shadowing is used deliberately and constantly with optional binding, where unwrapping a value under the same name is the norm:
+Shadowing is used on purpose all the time with optional binding. Unwrapping an optional under its own name is the normal idiom:
 
 ```swift
-func greet(_ name: String?) {
-    if let name = name {
-        print("Hello, \(name)")  // name is a String here, not a String?
+func welcome(_ nickname: String?) {
+    if let nickname = nickname {
+        print("Welcome back, \(nickname)")  // here nickname is a String, not a String?
     }
 }
 ```
 
-Since Swift 5.7, the shorthand `if let name { ... }` means the same thing.
+Since Swift 5.7, `if let nickname { ... }` means the same thing.
 
-Within a function, blocks may be nested to any depth, so one local declaration can shadow another. Most blocks are created by control-flow constructs like `if` statements and `for` loops. The function below has two different variables called `x` because the declarations appear in different blocks. (This example illustrates scope rules, not good style!)
+Blocks nest to any depth, and each can shadow names from those around it. In the function below, two variables named `x` coexist (a style to avoid in real code, but useful to illustrate the rules):
 
 ```swift
 func shout(_ x: String) {
@@ -701,38 +668,38 @@ func shout(_ x: String) {
 shout("hello!")  // "HELLO! (6 letters)"
 ```
 
-Inside the `if` block, `x` refers to the `Character` bound by `if let`; outside it, including in the loop's sequence expression and in the final `print`, `x` refers to the `String` parameter. The `if let` declaration is visible only within its block, so when the block ends, the parameter becomes visible again.
+Inside the `if let` block, `x` is the `Character` it binds; everywhere else in the function, including the loop's sequence and the final `print`, it's the `String` parameter.
 
-The conditions of `if` and `guard` statements create scopes as well. A name bound by `if let` is visible only within the `if` block. A name bound by `guard let`, by contrast, is visible from the `guard` statement to the end of the *enclosing* block, which is the whole point of `guard`:
+Conditions in `if`, `while`, and `guard` statements create scopes as well, with one asymmetry that makes `guard` so useful: a name bound by `if let` is visible only inside the `if` block, but a name bound by `guard let` is visible from the `guard` to the end of the *enclosing* block:
 
 ```swift
-func readConfig(path: String) throws -> Config {
+func loadSettings(from path: String) throws -> Settings {
     guard let data = FileManager.default.contents(atPath: path) else {
-        throw ConfigError.missing(path)
+        throw SettingsError.missing(path)
     }
-    // data is in scope here, unwrapped.
-    return try JSONDecoder().decode(Config.self, from: data)
+    // data is in scope, and unwrapped, from here to the end of the function
+    return try JSONDecoder().decode(Settings.self, from: data)
 }
 ```
 
-Shadowing can still cause surprises. Consider a program that keeps the current working directory in a module-level variable:
+Shadowing does have a classic pitfall. Suppose a program keeps a logging level in a global variable and sets it from the command line:
 
 ```swift
-var cwd = ""
+var logLevel = "info"
 
-func setUpWorkingDirectory() {
-    let cwd = FileManager.default.currentDirectoryPath  // NOTE: wrong!
-    print("Working directory = \(cwd)")
+func configure(arguments: [String]) {
+    let logLevel = arguments.contains("-v") ? "debug" : "info"  // NOTE: wrong!
+    print("logging at \(logLevel)")
 }
 ```
 
-Since `cwd` is declared with `let` in the function, it is a new local constant that shadows the module-level variable, and the global `cwd` remains empty. Swift doesn't warn about this. The fix is to assign rather than declare:
+The `let` inside the function declares a *new* local constant that shadows the global. The function prints the level it computed, which looks right, but the global never changes, and the rest of the program keeps logging at `info`. Nothing warns about it. The fix is to assign, not declare:
 
 ```swift
-func setUpWorkingDirectory() {
-    cwd = FileManager.default.currentDirectoryPath
-    print("Working directory = \(cwd)")
+func configure(arguments: [String]) {
+    logLevel = arguments.contains("-v") ? "debug" : "info"
+    print("logging at \(logLevel)")
 }
 ```
 
-(In Swift 6, you'll find that mutable global variables are harder to use than this example suggests, because they're shared mutable state that any task could access concurrently. The compiler will insist that `cwd` either be isolated to an actor, typically `@MainActor`, or be replaced by something safer. We'll see why in Chapter 9. It's one more reason to avoid global variables.)
+(In practice, the Swift 6 compiler makes global variables like `logLevel` harder to use than this, because any task in the program could access one concurrently. It requires a mutable global to be protected, for example by isolating it to the main actor with `@MainActor`. Chapter 9 explains why. It's one more reason to keep state out of globals.)

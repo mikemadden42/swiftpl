@@ -18,10 +18,10 @@ Example programs carry a label such as `swiftpl/ch1/helloworld`, which names the
 **[1. Tutorial](ch01-tutorial.md)**
 - 1.1 Hello, World
 - 1.2 Command-Line Arguments
-- 1.3 Finding Duplicate Lines
-- 1.4 Drawing Lissajous Figures
-- 1.5 Fetching a URL
-- 1.6 Fetching URLs Concurrently
+- 1.3 Counting Things
+- 1.4 Drawing a Spirograph
+- 1.5 Downloading a URL
+- 1.6 Timing Requests Concurrently
 - 1.7 A Web Server
 - 1.8 Loose Ends
 
@@ -67,7 +67,7 @@ Example programs carry a label such as `swiftpl/ch1/helloworld`, which names the
 - 6.2 Mutating Methods and Reference Types
 - 6.3 Composing Types with Extensions and Protocols
 - 6.4 Method Values and Key Paths
-- 6.5 Example: Bit Vector Type
+- 6.5 Example: A Ring Buffer
 - 6.6 Encapsulation
 
 **[7. Protocols](ch07-protocols.md)**
@@ -84,8 +84,8 @@ Example programs carry a label such as `swiftpl/ch1/helloworld`, which names the
 - 7.11 Discriminating Errors with Casts
 - 7.12 Querying Behaviors with Conditional Casts
 - 7.13 Type Switches
-- 7.14 Example: Token-Based XML Decoding
-- 7.15 A Few Words of Advice
+- 7.14 Example: Reading a News Feed with XMLParser
+- 7.15 Choosing Between Protocols, Generics, and Enums
 
 **[8. Tasks and Asynchronous Sequences](ch08-tasks.md)**
 - 8.1 Tasks and `async`/`await`
@@ -129,7 +129,7 @@ Example programs carry a label such as `swiftpl/ch1/helloworld`, which names the
 **[12. Reflection](ch12-reflection.md)**
 - 12.1 Why Reflection?
 - 12.2 `Mirror`
-- 12.3 `display`, a Recursive Value Printer
+- 12.3 `inspect`, a Recursive Value Printer
 - 12.4 Example: Encoding S-Expressions
 - 12.5 Setting Values with Key Paths
 - 12.6 Example: Decoding S-Expressions

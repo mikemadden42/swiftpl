@@ -215,12 +215,12 @@ struct Case: Sendable, CustomTestStringConvertible {
 }
 
 @Test(arguments: [
-    Case(input: "sqrt(A / pi)", env: ["A": 87616, "pi": .pi], want: "167"),
-    Case(input: "pow(x, 3) + pow(y, 3)", env: ["x": 12, "y": 1], want: "1729"),
-    Case(input: "pow(x, 3) + pow(y, 3)", env: ["x": 9, "y": 10], want: "1729"),
-    Case(input: "5 / 9 * (F - 32)", env: ["F": -40], want: "-40"),
-    Case(input: "5 / 9 * (F - 32)", env: ["F": 32], want: "0"),
-    Case(input: "5 / 9 * (F - 32)", env: ["F": 212], want: "100"),
+    Case(input: "sqrt(x * x + y * y)", env: ["x": 3, "y": 4], want: "5"),
+    Case(input: "max(a, b) - min(a, b)", env: ["a": 3, "b": 10], want: "7"),
+    Case(input: "abs(t - 20)", env: ["t": 17.5], want: "2.5"),
+    Case(input: "price * (1 + tax)", env: ["price": 24.5, "tax": 0.08], want: "26.46"),
+    Case(input: "-(1 - 2) * 3", env: [:], want: "3"),
+    Case(input: "1 / 0", env: [:], want: "inf"),
 ])
 func evalTable(_ c: Case) throws {
     let expr = try parse(c.input)
@@ -229,11 +229,11 @@ func evalTable(_ c: Case) throws {
 }
 ```
 
-Since `evalTable` is declared `throws`, it can call the parser with a plain `try`. If parsing fails, the error fails the test case and appears in the report. A failing case is identified by its description:
+Since `evalTable` is declared `throws`, it can call the parser with a plain `try`. If parsing fails, the error fails the test case and appears in the report. A failing case is identified by its description. If the expected result for the tax calculation had been mistyped as `26.5`, for instance, the report would say:
 
 ```
 ✘ Test evalTable(_:) with 6 test cases failed after 0.002 seconds with 1 issue.
-✘ Test evalTable(_:) recorded an issue with 1 argument c → 5 / 9 * (F - 32): Expectation failed: (got → "55.5556") == (c.want → "56")
+✘ Test evalTable(_:) recorded an issue with 1 argument c → price * (1 + tax): Expectation failed: (got → "26.46") == (c.want → "26.5")
 ```
 
 ### 11.2.3. Throwing and Required Expectations
@@ -517,13 +517,13 @@ And beware tests that can't fail: those that compare a function's output with it
 
 **Exercise 11.1:** Write a *reference* implementation of `slugify` using a regular expression (`Regex` or `NSRegularExpression`) instead of a loop, and a randomized test that checks the two agree on 10,000 random titles. When they disagree, which one is right?
 
-**Exercise 11.2:** Write a randomized test for the `IntSet` of Section 6.5 that applies a long random sequence of `insert`, `contains`, and `formUnion` operations to both an `IntSet` and a `Set<Int>` and checks that they always agree.
+**Exercise 11.2:** Write a randomized test for the `RingBuffer` of Section 6.5 that applies a long random sequence of `append` and `popFirst` operations both to a ring buffer and to a simple reference model (an array that drops its first element when it grows past the capacity), and checks that they always agree.
 
 **Exercise 11.3:** Write tests for `runLengthEncoded` from Section 3.5, including empty strings, single characters, and multi-scalar characters such as flags. Once you've done Exercise 3.9, add a round-trip property test.
 
 **Exercise 11.4:** Write a round-trip test, `decode(encode(x)) == x`, for randomly generated values of the `CatalogEntry` type from Section 4.5.
 
-**Exercise 11.5:** Write a parameterized test for `topoSort` (Section 5.6.2) that checks, for every course and each of its prerequisites, that the prerequisite comes first.
+**Exercise 11.5:** Write a parameterized test for `buildOrder` (Section 5.6.2) that checks, for every target and each of its dependencies, that the dependency comes first.
 
 **Exercise 11.6:** Test the `Memo` actor of Section 9.7 by starting 100 concurrent requests for one key and checking that the underlying function ran exactly once.
 
@@ -667,7 +667,7 @@ Whatever the tool, the method is the same. Decide what you want to know before y
 
 **Exercise 11.7:** Write a faster `slugify` that builds its result in a single `String`, appending a hyphen only when a new word starts, instead of collecting words in an array. Benchmark both versions on short and long titles, counting allocations as well as time. Make sure the parameterized and property-based tests still pass.
 
-**Exercise 11.8:** Benchmark `IntSet` against `Set<Int>` for `insert`, `contains`, and `formUnion` at several sizes. Where does each one win?
+**Exercise 11.8:** Benchmark `RingBuffer` against an array used as a queue (`append` plus `removeFirst`) for keeping the last *n* of a long stream of values, at several sizes of *n*. Where does each one win?
 
 **Exercise 11.9:** Write a merge sort that recurses on `ArraySlice`s and another that copies into new arrays at each level. Measure the difference in a release build.
 
@@ -747,6 +747,6 @@ A related technique is *snapshot testing*, offered by packages such as `swift-sn
 
 Examples in documentation, then, serve three purposes: they explain, faster than prose can; they specify, when tests keep them accurate; and they invite experimentation. A reader can paste an example into the Swift REPL or a playground, change it, and see what happens, which is how many people learn a language best.
 
-**Exercise 11.12:** Add documentation comments with examples to the `IntSet` of Section 6.5, and a test for each example.
+**Exercise 11.12:** Add documentation comments with examples to the `RingBuffer` of Section 6.5, and a test for each example.
 
 **Exercise 11.13:** Write a snapshot-style test for the `Expr` pretty-printer of Exercise 7.13 that stores the expected output in a file next to the test. Make updating the stored file a deliberate act, for instance by requiring an environment variable to be set.

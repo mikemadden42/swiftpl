@@ -562,7 +562,7 @@ There's a caveat hiding in `digest(of:)`. `Data(contentsOf:)` reads the file *sy
 
 ## 8.6. Example: Concurrent Web Crawler
 
-The crawler of Section 5.6 fetched one page at a time, and so spent nearly all its time waiting on the network. Page fetches are independent, which makes the crawler another natural candidate for parallel work. The `crawl` function itself doesn't change:
+The link checker of Section 5.6 visited one page at a time, and so spent nearly all its time waiting on the network. Page fetches are independent of each other, which makes crawling a natural candidate for parallel work. In this section we'll build a concurrent crawler on the same `extract` function from the `Links` module. Each crawl prints a page's URL and returns its links:
 
 ```swift
 // swiftpl/ch8/crawl1
@@ -579,7 +579,7 @@ func crawl(_ url: String) async -> [String] {
 }
 ```
 
-What changes is the driver. It keeps a worklist of URLs to visit and a set of URLs already seen, as `breadthFirst` did, but it now runs up to 20 crawls at a time as children of a task group:
+The driver keeps a worklist of URLs to visit and a set of URLs already seen, as the link checker did, but it runs up to 20 crawls at a time as children of a task group:
 
 ```swift
 let maxConcurrent = 20
@@ -729,7 +729,7 @@ When the sources are already asynchronous sequences, the `merge` function from `
 
 **Exercise 8.10:** Rewrite `quiz` using `merge` and `AsyncTimerSequence` from `swift-async-algorithms`.
 
-**Exercise 8.11:** Write a version of `fetch` that takes several URLs for the same resource, requests them all concurrently, prints whichever response arrives first, and cancels the others.
+**Exercise 8.11:** Write a version of `download` (Section 1.5) that takes several URLs for the same resource, requests them all concurrently, prints whichever response arrives first, and cancels the others.
 
 ## 8.8. Example: Concurrent Directory Traversal
 
