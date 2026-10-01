@@ -682,6 +682,7 @@ let catalog = [
 Converting Swift values to JSON is *encoding*:
 
 ```swift
+// swiftpl/ch4/catalog (continued)
 let encoder = JSONEncoder()
 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
 let data = try encoder.encode(catalog)
@@ -718,6 +719,7 @@ Optional properties get special treatment. Encoding leaves out a property whose 
 *Decoding* goes the other way:
 
 ```swift
+// swiftpl/ch4/catalog (continued)
 let decoded = try JSONDecoder().decode([CatalogEntry].self, from: data)
 print(decoded.map(\.title))
 ```
@@ -725,6 +727,7 @@ print(decoded.map(\.title))
 The first argument says what to decode, written as a *metatype*: `[CatalogEntry].self` is the type `[CatalogEntry]` used as a value. Decoding checks everything. A missing key, a value of the wrong type, or malformed JSON makes `decode` throw a `DecodingError` that pinpoints the problem, down to the path of the offending field. Keys in the input that the type doesn't declare are ignored, which means you can declare a type with only the fields you care about and decode just those from a larger document:
 
 ```swift
+// swiftpl/ch4/catalog (continued)
 struct TitleOnly: Decodable {
     var title: String
 }
@@ -975,6 +978,7 @@ A type conforms to `ExpressibleByStringInterpolation` by declaring an `Interpola
 Here's a forecast page, which includes a place name given by the user:
 
 ```swift
+// swiftpl/ch4/weather/Sources/forecastpage/HTML.swift (continued)
 func forecastPage(place: String, _ f: Forecast) -> HTML {
     var rows = ""
     for (i, day) in f.daily.time.enumerated() {

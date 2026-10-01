@@ -35,6 +35,7 @@ Inside the methods, `lower` and `upper` refer to the instance's properties, shor
 A method is called with dot syntax, the instance first:
 
 ```swift
+// swiftpl/ch6/interval (continued)
 let meeting = Interval(lower: 9, upper: 10.5)
 let lunch = Interval(lower: 12, upper: 13)
 print(meeting.length)  // "1.5"
@@ -53,6 +54,7 @@ An *extension* adds members to a type after its declaration: methods, computed p
 Suppose a calendar program keeps the day's meetings in an array of intervals, and needs to know how much of the day is booked. Overlapping meetings mustn't be counted twice: two meetings from 9:00 to 10:00 and 9:30 to 11:00 occupy two hours, not two and a half. That question belongs to *arrays of intervals*, and a *constrained extension* adds a method to exactly those:
 
 ```swift
+// swiftpl/ch6/interval (continued)
 extension Array where Element == Interval {
     /// Returns the total length covered by the intervals, counting overlaps once.
     func coveredLength() -> Double {
@@ -92,6 +94,7 @@ Extending types you don't own is routine in Swift, and it's more flexible than w
 Members marked `static` belong to the type itself rather than to any instance. Static constants and static *factory methods*, which construct instances in a particular way, are both common:
 
 ```swift
+// swiftpl/ch6/interval (continued)
 extension Interval {
     static let unit = Interval(lower: 0, upper: 1)
 
@@ -113,6 +116,7 @@ In the last line, `.unit` is an *implicit member expression*: where the expected
 Because a struct is a value, its methods can't change it unless they're marked `mutating`. A mutating method receives `self` as an implicit `inout` parameter (Section 2.3.2), so its changes are written back to the variable it was called on:
 
 ```swift
+// swiftpl/ch6/interval (continued)
 extension Interval {
     /// Moves the interval by delta.
     mutating func shift(by delta: Double) {
@@ -138,6 +142,7 @@ That's what makes `let` meaningful for structs. The compiler guarantees that a n
 The API Design Guidelines recommend naming mutating and non-mutating versions of an operation consistently. When the operation is a verb, the mutating method uses the plain verb and the non-mutating one uses its "-ed" or "-ing" form: `sort()` and `sorted()`, `shift(by:)` and `shifted(by:)`. When it's naturally a noun, the non-mutating method uses the noun and the mutating one adds the prefix "form": `union(_:)` and `formUnion(_:)`. A non-mutating version is often easiest to write in terms of the mutating one:
 
 ```swift
+// swiftpl/ch6/interval (continued)
 extension Interval {
     func shifted(by delta: Double) -> Interval {
         var copy = self
@@ -257,6 +262,7 @@ This is explicit and clear, and it's what most Swift code does. An `Annotation` 
 When several types share a capability, Swift's preferred approach is to name the capability with a *protocol* and implement the shared behavior once, in a *protocol extension*. Here's a protocol for anything that occupies a span of time:
 
 ```swift
+// swiftpl/ch6/annotation (continued)
 protocol HasSpan {
     var span: Interval { get set }
 }
@@ -277,6 +283,7 @@ extension HasSpan {
 The protocol requires one thing, a readable and writable `span`. The extension then gives *every* conforming type a `duration` property and `overlaps` and `shift` methods, all written in terms of that one requirement. A type acquires them simply by conforming:
 
 ```swift
+// swiftpl/ch6/annotation (continued)
 extension Annotation: HasSpan {}  // its stored 'span' property satisfies the requirement
 
 struct Meeting: HasSpan {
@@ -445,6 +452,7 @@ The storage is an array of *optionals*, so that unused positions can hold `nil` 
 A ring buffer is far more useful if it can be printed, so let's give it a `description`:
 
 ```swift
+// swiftpl/ch6/ringbuffer (continued)
 extension RingBuffer: CustomStringConvertible {
     var description: String {
         "[" + elements.map { "\($0)" }.joined(separator: ", ") + "]"
@@ -455,6 +463,7 @@ extension RingBuffer: CustomStringConvertible {
 Here it keeps the last three commands of a shell session:
 
 ```swift
+// swiftpl/ch6/ringbuffer (continued)
 var history = RingBuffer<String>(capacity: 3)
 for command in ["ls", "cd src", "swift build", "swift test"] {
     history.append(command)

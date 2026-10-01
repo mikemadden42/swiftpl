@@ -62,6 +62,7 @@ struct Transcript: TextOutputStream {
 `print` doesn't know anything about `Transcript`, and doesn't need to:
 
 ```swift
+// swiftpl/ch7/transcript (continued)
 var t = Transcript()
 print("hello", to: &t)
 print("a", "b", "c", separator: "-", to: &t)
@@ -237,6 +238,7 @@ struct Plug: Switchable {
 Later, someone wants to estimate the household's power use. That's a new role, cutting across the existing ones, and it can be added without modifying any of the device types:
 
 ```swift
+// swiftpl/ch7/home (continued)
 protocol PowerConsumer {
     var watts: Double { get }
 }
@@ -304,6 +306,7 @@ extension Duration: @retroactive ExpressibleByArgument {
 The order of the table matters, since `"250ms"` also ends with `"s"`; checking `"ms"` first handles it correctly. The distance uses the `Kilometers` type from the `Distance` module of Section 2.6, accepting either kilometers or miles:
 
 ```swift
+// swiftpl/ch7/pace (continued)
 import Distance
 
 extension Kilometers: @retroactive ExpressibleByArgument {
@@ -322,6 +325,7 @@ extension Kilometers: @retroactive ExpressibleByArgument {
 With those two conformances, the command itself is short:
 
 ```swift
+// swiftpl/ch7/pace (continued)
 import Foundation
 
 @main
@@ -479,6 +483,7 @@ let finishers = [
 A helper prints them as a table, padding each column with Foundation's `padding(toLength:withPad:startingAt:)` and formatting the times as hours, minutes, and seconds:
 
 ```swift
+// swiftpl/ch7/results (continued)
 import Foundation
 
 func printResults(_ finishers: [Finisher]) {
@@ -492,6 +497,7 @@ func printResults(_ finishers: [Finisher]) {
 Sorting by time gives the finishing order:
 
 ```swift
+// swiftpl/ch7/results (continued)
 printResults(finishers.sorted { $0.time < $1.time })
 ```
 
@@ -505,6 +511,7 @@ Kofi Mensah   GHA 38 2:45:03
 Lena Ortiz and Ayumi Sato finished in the same time, and the stable sort left them in their original order. A results table would usually break ties by some other field, say alphabetically by name. That calls for a sort on *two* keys, and Swift's tuples make it a one-liner, because tuples of `Comparable` values (up to six of them) compare lexicographically, element by element:
 
 ```swift
+// swiftpl/ch7/results (continued)
 printResults(finishers.sorted { ($0.time, $0.name) < ($1.time, $1.name) })
 ```
 
@@ -518,6 +525,7 @@ Kofi Mensah   GHA 38 2:45:03
 When the sort keys are chosen at run time, perhaps by a user clicking column headings, it helps to represent each key as a value. Foundation's `KeyPathComparator` does that, pairing a key path with a direction, and `sorted(using:)` sorts by a list of them in priority order:
 
 ```swift
+// swiftpl/ch7/results (continued)
 var order = [KeyPathComparator(\Finisher.time)]
 order.insert(KeyPathComparator(\Finisher.age, order: .reverse), at: 0)  // the user chose "oldest first"
 printResults(finishers.sorted(using: order))
@@ -528,6 +536,7 @@ printResults(finishers.sorted(using: order))
 When a type has one natural ordering, make it `Comparable` by implementing `<`:
 
 ```swift
+// swiftpl/ch7/results (continued)
 extension Finisher: Comparable {
     static func < (a: Finisher, b: Finisher) -> Bool {
         (a.time, a.name) < (b.time, b.name)
@@ -545,6 +554,7 @@ In return for that one operator, the type gets `sort()`, `sorted()`, `min()`, `m
 A sorted check is a neat use of `zip`, which pairs each element with its successor:
 
 ```swift
+// swiftpl/ch7/results (continued)
 func isSorted<T: Comparable>(_ values: [T]) -> Bool {
     zip(values, values.dropFirst()).allSatisfy { $0 <= $1 }
 }
@@ -620,6 +630,7 @@ print(s.pop() ?? "empty")  // "b"
 An extension can add members or conformances that apply only when the type parameters meet extra constraints, a *conditional conformance*:
 
 ```swift
+// swiftpl/ch7/stack (continued)
 extension Stack: Equatable where Element: Equatable {}  // == is synthesized
 extension Stack: Sendable where Element: Sendable {}
 ```
@@ -680,6 +691,7 @@ print("Liftoff!")  // "3 2 1 Liftoff!"
 The compiler infers `Element` to be `Int` from the result type of `next()`. Since `Countdown` serves as its own iterator, the default `makeIterator()` simply returns a copy of it. And by conforming to `Sequence`, it acquires every sequence algorithm:
 
 ```swift
+// swiftpl/ch7/countdown (continued)
 let c = Countdown(count: 5)
 print(c.map { $0 * $0 })  // "[25, 16, 9, 4, 1]"
 print(c.filter { $0.isMultiple(of: 2) })  // "[4, 2]"
@@ -771,12 +783,14 @@ The enum is `indirect` because its cases contain other `Expr` values directly, s
 To evaluate an expression with variables, we need an *environment* giving their values:
 
 ```swift
+// swiftpl/ch7/eval (continued)
 typealias Env = [String: Double]
 ```
 
 Evaluation is a single method that switches over the kinds of expression, recursively evaluating the parts:
 
 ```swift
+// swiftpl/ch7/eval (continued)
 import Foundation
 
 extension Expr {
@@ -967,6 +981,7 @@ Note the nested patterns in `precedence` and `parsePrimary`: `case .symbol("*")`
 The checking pass walks the tree, rejecting anything `eval` couldn't handle, and collects the variables the expression uses, so that a caller can make sure they're all defined:
 
 ```swift
+// swiftpl/ch7/eval (continued)
 extension Expr {
     static let arity = ["min": 2, "max": 2, "abs": 1, "sqrt": 1]
 

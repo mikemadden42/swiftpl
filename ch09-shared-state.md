@@ -240,6 +240,7 @@ Inside the actor, nothing special is required. Methods read and write `seatsLeft
 Outside the actor, things are different. Every call into it is written with `await`, because the actor may be busy serving someone else:
 
 ```swift
+// swiftpl/ch9/boxoffice3 (continued)
 let office = BoxOffice()
 
 await withTaskGroup(of: Bool.self) { group in

@@ -486,6 +486,7 @@ func walk(_ n: Node, depth: Int = 0, _ visit: (Node, Int) -> Void) {
 Now each question about a document needs only the code that's specific to it. (The calls below go in `toc`'s `do` block, where the parsed document `doc` is in scope.) Counting how often each tag is used:
 
 ```swift
+// swiftpl/ch5/walk (continued)
 var tagCounts: [String: Int] = [:]
 walk(doc) { node, _ in
     if let e = node as? Element {
@@ -500,6 +501,7 @@ for (tag, n) in tagCounts.sorted(by: { $0.value > $1.value }).prefix(5) {
 Printing the structure of the page's lists, indented by depth:
 
 ```swift
+// swiftpl/ch5/walk (continued)
 walk(doc) { node, depth in
     if let e = node as? Element, ["ul", "ol", "li"].contains(e.tagName()) {
         print(String(repeating: "  ", count: depth) + "<\(e.tagName())>")
@@ -610,6 +612,7 @@ let dependencies: [String: [String]] = [
 A *depth-first search* produces a valid order: before emitting a target, emit (recursively) everything it depends on, skipping anything already emitted.
 
 ```swift
+// swiftpl/ch5/buildorder (continued)
 func buildOrder(_ deps: [String: [String]]) -> [String] {
     var order: [String] = []
     var done = Set<String>()

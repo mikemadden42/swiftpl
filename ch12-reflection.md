@@ -163,6 +163,7 @@ func format(_ value: Any) -> String {
 Here it is applied to a recipe:
 
 ```swift
+// swiftpl/ch12/inspect (continued)
 struct Recipe {
     var title: String
     var servings: Int
@@ -333,6 +334,7 @@ The encoder is `walk` with output rules. Atoms are handled first, by casting. He
 Encoding our recipe, with one more field added, shows the layout:
 
 ```swift
+// swiftpl/ch12/sexpr (continued)
 struct Recipe {
     var title: String
     var servings: Int
@@ -412,6 +414,7 @@ print(p[keyPath: age])  // "37"
 Because a key path is an ordinary value, it can be passed around and stored, which lets one function operate on whichever property the caller chooses:
 
 ```swift
+// swiftpl/ch12/keypath (continued)
 func setAll<T, V>(_ items: inout [T], _ keyPath: WritableKeyPath<T, V>, to value: V) {
     for i in items.indices {
         items[i][keyPath: keyPath] = value
@@ -425,6 +428,7 @@ setAll(&people, \.age, to: 0)
 To choose a property by *name*, put key paths in a dictionary. The set of accessible properties is fixed when the table is written, but which one is used can be decided at run time:
 
 ```swift
+// swiftpl/ch12/keypath (continued)
 let fields: [String: PartialKeyPath<Person>] = [
     "name": \Person.name,
     "age": \Person.age,
@@ -580,6 +584,7 @@ The parser is a straightforward recursive descent. A `(` starts a list, which ru
 The `Decoder` protocol asks for three kinds of *container*, one for each shape of data: a *keyed* container for things with named fields, an *unkeyed* container for sequences, and a *single-value* container for atoms. In our format, a struct is a list of `(name value)` pairs, so making a keyed container means turning that list into a dictionary:
 
 ```swift
+// swiftpl/ch12/sexprdecode (continued)
 struct SExprDecoder: Decoder {
     let value: SExpr
     var codingPath: [any CodingKey] = []
@@ -617,6 +622,7 @@ The container protocols are long, because they have a separate `decode` method f
 The single-value container converts atoms to Swift values. A private generic helper serves all the integer types at once, using `init(exactly:)` so that a number too large for the requested type is reported as an error rather than silently truncated:
 
 ```swift
+// swiftpl/ch12/sexprdecode (continued)
 struct AtomContainer: SingleValueDecodingContainer {
     let value: SExpr
     var codingPath: [any CodingKey] = []
@@ -674,6 +680,7 @@ struct AtomContainer: SingleValueDecodingContainer {
 The keyed container looks up the field for each key and delegates the conversion to an `AtomContainer`:
 
 ```swift
+// swiftpl/ch12/sexprdecode (continued)
 struct FieldContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
     let fields: [String: SExpr]
     var codingPath: [any CodingKey] = []
@@ -729,6 +736,7 @@ struct FieldContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
 The unkeyed container walks a list in order, with `currentIndex` marking its position:
 
 ```swift
+// swiftpl/ch12/sexprdecode (continued)
 struct ListContainer: UnkeyedDecodingContainer {
     let items: [SExpr]
     var codingPath: [any CodingKey] = []
@@ -785,6 +793,7 @@ struct ListContainer: UnkeyedDecodingContainer {
 Finally, a top-level function plays the role that `JSONDecoder.decode(_:from:)` plays for JSON:
 
 ```swift
+// swiftpl/ch12/sexprdecode (continued)
 func unmarshal<T: Decodable>(_ type: T.Type, from text: String) throws -> T {
     var parser = SExprParser(text)
     return try T(from: SExprDecoder(value: try parser.parse()))
@@ -794,6 +803,7 @@ func unmarshal<T: Decodable>(_ type: T.Type, from text: String) throws -> T {
 Now any `Decodable` type can be read from an S-expression, though the decoder was written without knowledge of any of them:
 
 ```swift
+// swiftpl/ch12/sexprdecode (continued)
 struct Recipe: Codable {
     var title: String
     var servings: Int

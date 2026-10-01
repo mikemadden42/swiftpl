@@ -587,6 +587,7 @@ func printError(_ message: String) {
 The driver keeps a worklist of URLs to visit and a set of URLs already seen, as the link checker did, but it runs up to 20 crawls at a time as children of a task group:
 
 ```swift
+// swiftpl/ch8/crawl1 (continued)
 let maxConcurrent = 20
 
 await withTaskGroup(of: [String].self) { group in
@@ -655,6 +656,7 @@ func request(_ host: String) async throws -> Data {
 Racing an operation against a timer gives a timeout:
 
 ```swift
+// swiftpl/ch8/fastest (continued)
 struct TimeoutError: Error {}
 
 func withTimeout<T: Sendable>(
@@ -790,6 +792,7 @@ func printError(_ message: String) {
 The main code walks each directory named on the command line, or the current directory if there are none, and prints the combined result:
 
 ```swift
+// swiftpl/ch8/dirsize1 (continued)
 // Determine the initial directories.
 var roots = CommandLine.arguments.dropFirst().map { URL(filePath: $0) }
 if roots.isEmpty {
@@ -880,6 +883,7 @@ printDiskUsage(usage)  // final totals
 For this version, `walkDir` reports each file to a closure as it finds it, instead of returning a total:
 
 ```swift
+// swiftpl/ch8/dirsize3 (continued)
 func walkDir(_ dir: URL, _ found: (Int) -> Void) {
     for entry in entries(of: dir) {
         let values = try? entry.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
@@ -947,6 +951,7 @@ if walk.isCancelled {
 The parallel `walkDir` from Section 8.8 needs only one change to honor the request. Cancelling `walk` cancels every task group it contains, and every child in those groups, so each call just has to look before doing any work:
 
 ```swift
+// swiftpl/ch8/dirsize4 (continued)
 func walkDir(_ dir: URL) async -> Usage {
     if Task.isCancelled {
         return Usage()
@@ -978,7 +983,7 @@ The interesting problem is the *membership list*. Each client's connection is ha
 Three kinds of event reach the room: someone joins, someone leaves, and someone says something. Here are the event type and the server's main loop, which reuses the line-oriented setup from Section 8.3:
 
 ```swift
-// swiftpl/ch8/chat
+// swiftpl/ch8/chat (builds on remind1)
 enum RoomEvent: Sendable {
     case join(id: Int, name: String, inbox: AsyncStream<String>.Continuation)
     case leave(id: Int)
@@ -1003,6 +1008,7 @@ try await withThrowingDiscardingTaskGroup { group in
 Every member has an *inbox*: a stream of lines waiting to be sent to that member. When someone joins, they hand the room the sending end of their inbox. The room keeps those, and nothing else:
 
 ```swift
+// swiftpl/ch8/chat (continued)
 func room() async {
     var members: [Int: (name: String, inbox: AsyncStream<String>.Continuation)] = [:]
     for await event in roomEvents {
@@ -1033,6 +1039,7 @@ func room() async {
 Each connection is served by a function that runs in its own task and starts one helper task of its own:
 
 ```swift
+// swiftpl/ch8/chat (continued)
 func serve(_ connection: NIOAsyncChannel<ByteBuffer, ByteBuffer>, id: Int) async throws {
     let (inbox, inboxIn) = AsyncStream.makeStream(of: String.self)
 

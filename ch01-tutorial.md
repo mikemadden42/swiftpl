@@ -560,6 +560,7 @@ try await app.runService()
 A handler can return images as well as text. Put the `spirograph` function from Section 1.4, with its constants, into another file of the package, and add a route for it:
 
 ```swift
+// swiftpl/ch1/greet2 (continued)
 router.get("spirograph") { _, _ in
     Response(
         status: .ok,

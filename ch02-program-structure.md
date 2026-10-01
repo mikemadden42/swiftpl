@@ -436,6 +436,7 @@ Now distances in different units can't be combined by accident; converting betwe
 As written, though, the types are awkward: you can't write a distance as a plain literal, add two distances, or print one nicely. Swift lets the types opt in to each of those abilities by conforming to protocols, which we'll add in *extensions*:
 
 ```swift
+// swiftpl/ch2/distance0 (continued)
 extension Kilometers: ExpressibleByFloatLiteral, ExpressibleByIntegerLiteral {
     init(floatLiteral value: Double) { self.value = value }
     init(integerLiteral value: Int) { self.value = Double(value) }
@@ -455,6 +456,7 @@ extension Kilometers: CustomStringConvertible {
 With these, kilometers behave like numbers, but only with each other:
 
 ```swift
+// swiftpl/ch2/distance0 (continued)
 let warmup: Kilometers = 3
 print(marathon + warmup)  // "45.195 km"
 print(warmup < marathon)  // "true"

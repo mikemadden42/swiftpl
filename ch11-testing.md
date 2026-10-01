@@ -378,6 +378,7 @@ Each check carries a message that includes the generated title, so a failure tel
 Random tests must still be reproducible. A test that fails once and then can't be made to fail again is a frustrating thing to debug. So the generator is *seeded*: given the same seed, it produces the same sequence, and the test produces the same inputs on every run. The standard library's default generator can't be seeded, but `RandomNumberGenerator` asks for only one method, so it takes a few lines to write one. This is SplitMix64, a small, fast, well-studied algorithm:
 
 ```swift
+// swiftpl/ch11/slug3 (continued)
 /// A fast, deterministic generator (SplitMix64) for reproducible tests.
 struct SeededGenerator: RandomNumberGenerator {
     private var state: UInt64
@@ -424,6 +425,7 @@ func tally(_ text: String, top n: Int, to out: inout some TextOutputStream) {
 and a test of it:
 
 ```swift
+// swiftpl/ch11/tally (continued)
 @Test(arguments: [
     (text: "", top: 3, want: ""),
     (text: "a b a", top: 1, want: "2 a\n"),
@@ -480,6 +482,7 @@ struct RateLimiter {
 The test supplies a clock it controls completely:
 
 ```swift
+// swiftpl/ch11/ratelimit (continued)
 @Test func limitsBursts() {
     var time = 0.0
     var limiter = RateLimiter(limit: 2, window: 1.0, now: { time })

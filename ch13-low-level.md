@@ -31,6 +31,7 @@ print(MemoryLayout<Int?>.size)  // 9
 Alignment means that the order of a struct's properties can affect its size. Consider three versions of an event record containing the same three fields, a flag, a 32-bit code, and a 64-bit timestamp, in different orders:
 
 ```swift
+// swiftpl/ch13/layout (continued)
 struct A { var flag: Bool; var count: Int32; var big: Int64 }
 struct B { var flag: Bool; var big: Int64; var count: Int32 }
 struct C { var big: Int64; var count: Int32; var flag: Bool }
@@ -59,6 +60,7 @@ So when a struct is stored by the million, ordering its properties from largest 
 `MemoryLayout<T>.offset(of:)` reports where a stored property begins, given a key path to it:
 
 ```swift
+// swiftpl/ch13/layout (continued)
 print(MemoryLayout<A>.offset(of: \.flag)!)  // 0
 print(MemoryLayout<A>.offset(of: \.count)!)  // 4
 print(MemoryLayout<A>.offset(of: \.big)!)  // 8
@@ -278,6 +280,7 @@ func pngInfo(_ bytes: [UInt8]) throws -> PNGInfo {
 and a main program that applies it to each file named on the command line, reading only the bytes it needs:
 
 ```swift
+// swiftpl/ch13/pnginfo (continued)
 import Foundation
 
 for path in CommandLine.arguments.dropFirst() {

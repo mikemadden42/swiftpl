@@ -165,3 +165,7 @@ The examples target Swift 6 in the Swift 6 language mode, with strict concurrenc
 | [swift-docc-plugin](https://github.com/swiftlang/swift-docc-plugin) | documentation | 10 |
 
 Chapter 13's SQLite example also needs the SQLite development library (`libsqlite3-dev` on Debian and Ubuntu); on Apple platforms, SQLite is part of the SDK.
+
+## License
+
+The text and the example code of this book are released under the [MIT License](LICENSE). Copyright © 2026 Michael Madden.

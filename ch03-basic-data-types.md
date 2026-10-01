@@ -101,6 +101,7 @@ print(permissions(0o754))  // "rwxr-xr--"
 The expression `1 << bit` produces a number with only that bit set, and `mode & (1 << bit)` is nonzero exactly when `mode` has the bit set too. The other operators correspond to common operations on sets of permissions:
 
 ```swift
+// swiftpl/ch3/permissions (continued)
 let mode: UInt16 = 0o754
 print(permissions(mode | 0o002))  // "rwxr-xrw-": grant others write (union)
 print(permissions(mode & ~0o444))  // "-wx--x---": remove all read bits (difference)
