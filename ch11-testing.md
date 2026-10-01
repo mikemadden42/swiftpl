@@ -93,7 +93,7 @@ Testing Library Version: 6.1
 ✔ Test run with 2 tests passed after 0.001 seconds.
 ```
 
-Now suppose a bug report arrives: the function fails on a famous palindrome from 1795 (Napoleon-era wordplay, "A man, a plan, a canal: Panama"), which has punctuation and mixed case, and one in French with accents. We write a test that reproduces it, first, before fixing anything:
+Now suppose a bug report arrives: the function fails on Leigh Mercer's famous 1948 palindrome "A man, a plan, a canal: Panama," which has punctuation and mixed case, and someone asks whether it handles one in French with accents. We write a test that reproduces it, first, before fixing anything:
 
 ```swift
 @Test func canalPanama() {
@@ -168,27 +168,29 @@ import Testing
 import Word
 
 @Test(arguments: [
-    "",
-    "a",
-    "aa",
-    "ab",
-    "kayak",
-    "détartrated",
-    "Évian?",
-    "A man, a plan, a canal: Panama",
-    "Evil I did dwell; lewd did I live.",
-    "Able was I ere I saw Elba",
-    "Et se resservir, ivresse reste.",
-    "No 'x' in Nixon",
+    ("", true),
+    ("a", true),
+    ("aa", true),
+    ("ab", false),
+    ("kayak", true),
+    ("detartrated", true),
+    ("été", true),
+    ("détartrated", false),  // é and e are different letters
+    ("Évian?", false),
+    ("A man, a plan, a canal: Panama", true),
+    ("Evil I did dwell; lewd did I live.", true),
+    ("Able was I ere I saw Elba", true),
+    ("Et se resservir, ivresse reste.", true),
+    ("No 'x' in Nixon", true),
+    ("palindrome", false),
+    ("desserts", false),
 ])
-func isPalindromeTest(_ input: String) {
-    let letters = input.filter(\.isLetter).lowercased()
-    let expected = letters == String(letters.reversed())  // a deliberately naive oracle
-    #expect(isPalindrome(input) == expected, "input: \(input)")
+func isPalindromeTest(_ input: String, _ want: Bool) {
+    #expect(isPalindrome(input) == want, "isPalindrome(\(input.debugDescription))")
 }
 ```
 
-Each argument is run as a separate *test case*, in parallel, and reported individually, so a failure names the input that failed. If a test takes several parameters, pass tuples or use `zip`; with two collections as arguments, Swift Testing runs the *cartesian product*:
+Each argument, here an input paired with its expected result, is run as a separate *test case*, in parallel, and reported individually, so a failure names the input that failed. The expected results are written out by hand. It would be tempting to compute them with a second copy of the palindrome logic, but a test that checks a function against itself can't find anything wrong with it. If a test takes several parameters, pass tuples or use `zip`; with two collections as arguments, Swift Testing runs the *cartesian product*:
 
 ```swift
 @Test(arguments: [1, 2, 3], ["a", "b"])
@@ -241,8 +243,8 @@ Errors are a normal part of behavior, so we need to test for them. `#expect(thro
     try parse("x % 2")
 }
 
-#expect(throws: ParseError.unexpectedEnd) {  // a specific, Equatable error value
-    try parse("1 +")
+#expect(throws: ParseError.unexpectedEnd) {  // a specific, Equatable error value (Section 7.8)
+    try parseNumber("")
 }
 
 #expect(throws: Never.self) {  // asserts that nothing is thrown
@@ -297,28 +299,43 @@ Because each test gets its own instance, tests in a suite don't interfere with e
 Tests may be `async`, and may use `await` freely, which makes testing the concurrent programs of Chapters 8 and 9 straightforward:
 
 ```swift
+/// A thread-safe call counter. (A Mutex is noncopyable, so it can't be
+/// captured by an escaping closure directly; a class wraps it.)
+final class CallCount: Sendable {
+    private let n = Mutex(0)
+    func increment() { n.withLock { $0 += 1 } }
+    var value: Int { n.withLock { $0 } }
+}
+
 @Test func memoComputesOnce() async throws {
-    let counter = Mutex(0)
+    let calls = CallCount()
     let memo = Memo<String, Int> { key in
-        counter.withLock { $0 += 1 }
+        calls.increment()
         return key.count
     }
     async let a = memo.get("hello")
     async let b = memo.get("hello")
     let results = try await [a, b]
     #expect(results == [5, 5])
-    #expect(counter.withLock { $0 } == 1)  // the function ran only once
+    #expect(calls.value == 1)  // the function ran only once
 }
 ```
 
 Callback-based APIs can be tested with `confirmation`, which checks how many times an event occurs:
 
 ```swift
-@Test func notifiesTwice() async {
-    await confirmation("handler called", expectedCount: 2) { confirm in
-        let n = Notifier(handler: { confirm() })
-        n.fire()
-        n.fire()
+/// A minimal callback-based event source.
+final class Ticker {
+    private let onTick: () -> Void
+    init(onTick: @escaping () -> Void) { self.onTick = onTick }
+    func tick() { onTick() }
+}
+
+@Test func ticksTwice() async {
+    await confirmation("onTick called", expectedCount: 2) { confirm in
+        let t = Ticker(onTick: { confirm() })
+        t.tick()
+        t.tick()
     }
 }
 ```

@@ -686,18 +686,22 @@ func greet(_ name: String?) {
 
 Since Swift 5.7, the shorthand `if let name { ... }` means the same thing.
 
-Within a function, blocks may be nested to any depth, so one local declaration can shadow another. Most blocks are created by control-flow constructs like `if` statements and `for` loops. The program below has three different variables called `x` because each declaration appears in a different block. (This example illustrates scope rules, not good style!)
+Within a function, blocks may be nested to any depth, so one local declaration can shadow another. Most blocks are created by control-flow constructs like `if` statements and `for` loops. The function below has two different variables called `x` because the declarations appear in different blocks. (This example illustrates scope rules, not good style!)
 
 ```swift
-let x = "hello!"
-for x in x {
-    let x = x.uppercased()
-    print(x, terminator: "")  // "HELLO!" (one letter per iteration)
+func shout(_ x: String) {
+    for c in x {  // x is the parameter, a String
+        if let x = c.uppercased().first {  // a new x, a Character, shadows the parameter
+            print(x, terminator: "")
+        }
+    }
+    print(" (\(x.count) letters)")  // x is the parameter again
 }
-print()
+
+shout("hello!")  // "HELLO! (6 letters)"
 ```
 
-The expressions `x` in the sequence position, `x` in the loop body, and `x.uppercased()` each refer to a different declaration. The sequence expression `for x in x` is evaluated in the outer scope, where `x` is the string; the loop variable `x` is a `Character`; and the inner `let x` is a new `String` that shadows the loop variable.
+Inside the `if` block, `x` refers to the `Character` bound by `if let`; outside it, including in the loop's sequence expression and in the final `print`, `x` refers to the `String` parameter. The `if let` declaration is visible only within its block, so when the block ends, the parameter becomes visible again.
 
 The conditions of `if` and `guard` statements create scopes as well. A name bound by `if let` is visible only within the `if` block. A name bound by `guard let`, by contrast, is visible from the `guard` statement to the end of the *enclosing* block, which is the whole point of `guard`:
 

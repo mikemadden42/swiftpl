@@ -637,7 +637,66 @@ struct SExprDecoder: Decoder {
 }
 ```
 
-The three container types are each a few dozen lines, since the protocols are long but repetitive: `KeyedDecodingContainerProtocol` has a `decode` method for each primitive type (`Bool`, `String`, `Double`, `Int`, and so on), plus a generic one for any `Decodable`. The generic one is the key to the design: when asked to decode a nested `Decodable` type, it creates a new `SExprDecoder` for the corresponding subtree and calls `T(from: decoder)`, which recursively does the same for *that* type's fields. Here is the keyed container, which shows the pattern:
+The three container types are long but repetitive, because each protocol has a separate `decode` method for every primitive type (`Bool`, `String`, `Double`, `Float`, and the ten integer types) plus a generic one for any other `Decodable`. The generic one is the key to the design: when asked to decode a nested `Decodable` type, it creates a new `SExprDecoder` for the corresponding subtree and calls `T(from:)`, which recursively does the same for *that* type's fields.
+
+The single-value container does the real work of converting atoms. A private generic helper handles all ten integer types at once, using `FixedWidthInteger(exactly:)` to reject values that don't fit:
+
+```swift
+struct AtomContainer: SingleValueDecodingContainer {
+    let value: SExpr
+    var codingPath: [any CodingKey] = []
+
+    func decodeNil() -> Bool { value == .symbol("nil") }
+
+    func decode(_ type: Bool.Type) throws -> Bool {
+        switch value {
+        case .symbol("t"): return true
+        case .symbol("nil"): return false
+        default: throw DecodeError.typeMismatch(expected: "t or nil", found: value)
+        }
+    }
+
+    func decode(_ type: String.Type) throws -> String {
+        guard case .string(let s) = value else {
+            throw DecodeError.typeMismatch(expected: "string", found: value)
+        }
+        return s
+    }
+
+    func decode(_ type: Double.Type) throws -> Double {
+        switch value {
+        case .double(let d): return d
+        case .int(let i): return Double(i)
+        default: throw DecodeError.typeMismatch(expected: "number", found: value)
+        }
+    }
+
+    func decode(_ type: Float.Type) throws -> Float { Float(try decode(Double.self)) }
+    func decode(_ type: Int.Type) throws -> Int { try integer() }
+    func decode(_ type: Int8.Type) throws -> Int8 { try integer() }
+    func decode(_ type: Int16.Type) throws -> Int16 { try integer() }
+    func decode(_ type: Int32.Type) throws -> Int32 { try integer() }
+    func decode(_ type: Int64.Type) throws -> Int64 { try integer() }
+    func decode(_ type: UInt.Type) throws -> UInt { try integer() }
+    func decode(_ type: UInt8.Type) throws -> UInt8 { try integer() }
+    func decode(_ type: UInt16.Type) throws -> UInt16 { try integer() }
+    func decode(_ type: UInt32.Type) throws -> UInt32 { try integer() }
+    func decode(_ type: UInt64.Type) throws -> UInt64 { try integer() }
+
+    func decode<T: Decodable>(_ type: T.Type) throws -> T {
+        try T(from: SExprDecoder(value: value))  // recurse into the subtree
+    }
+
+    private func integer<I: FixedWidthInteger>() throws -> I {
+        guard case .int(let i) = value, let n = I(exactly: i) else {
+            throw DecodeError.typeMismatch(expected: "\(I.self)", found: value)
+        }
+        return n
+    }
+}
+```
+
+The keyed container finds the field for each key and hands its value to an `AtomContainer`, so its many `decode` methods are one line each:
 
 ```swift
 struct FieldContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
@@ -652,28 +711,30 @@ struct FieldContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
         return v
     }
 
+    private func atom(_ key: Key) throws -> AtomContainer {
+        AtomContainer(value: try field(key))
+    }
+
     func decodeNil(forKey key: Key) throws -> Bool {
         guard let v = fields[key.stringValue] else { return true }  // missing means nil
         return v == .symbol("nil")
     }
 
-    func decode(_ type: Bool.Type, forKey key: Key) throws -> Bool {
-        try AtomContainer(value: field(key)).decode(Bool.self)
-    }
-    func decode(_ type: String.Type, forKey key: Key) throws -> String {
-        try AtomContainer(value: field(key)).decode(String.self)
-    }
-    func decode(_ type: Int.Type, forKey key: Key) throws -> Int {
-        try AtomContainer(value: field(key)).decode(Int.self)
-    }
-    func decode(_ type: Double.Type, forKey key: Key) throws -> Double {
-        try AtomContainer(value: field(key)).decode(Double.self)
-    }
-    // ...and similarly for Int8 ... UInt64, Float...
-
-    func decode<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T {
-        try T(from: SExprDecoder(value: field(key)))  // recurse into the subtree
-    }
+    func decode(_ type: Bool.Type, forKey key: Key) throws -> Bool { try atom(key).decode(type) }
+    func decode(_ type: String.Type, forKey key: Key) throws -> String { try atom(key).decode(type) }
+    func decode(_ type: Double.Type, forKey key: Key) throws -> Double { try atom(key).decode(type) }
+    func decode(_ type: Float.Type, forKey key: Key) throws -> Float { try atom(key).decode(type) }
+    func decode(_ type: Int.Type, forKey key: Key) throws -> Int { try atom(key).decode(type) }
+    func decode(_ type: Int8.Type, forKey key: Key) throws -> Int8 { try atom(key).decode(type) }
+    func decode(_ type: Int16.Type, forKey key: Key) throws -> Int16 { try atom(key).decode(type) }
+    func decode(_ type: Int32.Type, forKey key: Key) throws -> Int32 { try atom(key).decode(type) }
+    func decode(_ type: Int64.Type, forKey key: Key) throws -> Int64 { try atom(key).decode(type) }
+    func decode(_ type: UInt.Type, forKey key: Key) throws -> UInt { try atom(key).decode(type) }
+    func decode(_ type: UInt8.Type, forKey key: Key) throws -> UInt8 { try atom(key).decode(type) }
+    func decode(_ type: UInt16.Type, forKey key: Key) throws -> UInt16 { try atom(key).decode(type) }
+    func decode(_ type: UInt32.Type, forKey key: Key) throws -> UInt32 { try atom(key).decode(type) }
+    func decode(_ type: UInt64.Type, forKey key: Key) throws -> UInt64 { try atom(key).decode(type) }
+    func decode<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T { try atom(key).decode(type) }
 
     func nestedContainer<NestedKey: CodingKey>(
         keyedBy type: NestedKey.Type, forKey key: Key
@@ -689,6 +750,62 @@ struct FieldContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
 ```
 
 The `decodeNil(forKey:)` method is how the synthesized code for optional properties asks whether a field is `nil`. Our format treats both a missing field and the symbol `nil` as absent.
+
+Last, the unkeyed container decodes the elements of a list in order, keeping track of its position with `currentIndex`:
+
+```swift
+struct ListContainer: UnkeyedDecodingContainer {
+    let items: [SExpr]
+    var codingPath: [any CodingKey] = []
+    var currentIndex = 0
+
+    init(items: [SExpr]) { self.items = items }
+
+    var count: Int? { items.count }
+    var isAtEnd: Bool { currentIndex >= items.count }
+
+    /// Returns a container for the next element and advances past it.
+    private mutating func next() throws -> AtomContainer {
+        guard !isAtEnd else { throw DecodeError.unexpectedEnd }
+        defer { currentIndex += 1 }
+        return AtomContainer(value: items[currentIndex])
+    }
+
+    mutating func decodeNil() throws -> Bool {
+        guard !isAtEnd, items[currentIndex] == .symbol("nil") else { return false }
+        currentIndex += 1
+        return true
+    }
+
+    mutating func decode(_ type: Bool.Type) throws -> Bool { try next().decode(type) }
+    mutating func decode(_ type: String.Type) throws -> String { try next().decode(type) }
+    mutating func decode(_ type: Double.Type) throws -> Double { try next().decode(type) }
+    mutating func decode(_ type: Float.Type) throws -> Float { try next().decode(type) }
+    mutating func decode(_ type: Int.Type) throws -> Int { try next().decode(type) }
+    mutating func decode(_ type: Int8.Type) throws -> Int8 { try next().decode(type) }
+    mutating func decode(_ type: Int16.Type) throws -> Int16 { try next().decode(type) }
+    mutating func decode(_ type: Int32.Type) throws -> Int32 { try next().decode(type) }
+    mutating func decode(_ type: Int64.Type) throws -> Int64 { try next().decode(type) }
+    mutating func decode(_ type: UInt.Type) throws -> UInt { try next().decode(type) }
+    mutating func decode(_ type: UInt8.Type) throws -> UInt8 { try next().decode(type) }
+    mutating func decode(_ type: UInt16.Type) throws -> UInt16 { try next().decode(type) }
+    mutating func decode(_ type: UInt32.Type) throws -> UInt32 { try next().decode(type) }
+    mutating func decode(_ type: UInt64.Type) throws -> UInt64 { try next().decode(type) }
+    mutating func decode<T: Decodable>(_ type: T.Type) throws -> T { try next().decode(type) }
+
+    mutating func nestedContainer<NestedKey: CodingKey>(
+        keyedBy type: NestedKey.Type
+    ) throws -> KeyedDecodingContainer<NestedKey> {
+        try SExprDecoder(value: next().value).container(keyedBy: type)
+    }
+    mutating func nestedUnkeyedContainer() throws -> any UnkeyedDecodingContainer {
+        try SExprDecoder(value: next().value).unkeyedContainer()
+    }
+    mutating func superDecoder() throws -> any Decoder {
+        try SExprDecoder(value: next().value)
+    }
+}
+```
 
 Finally, the public entry point, the analogue of `JSONDecoder.decode`:
 
@@ -723,9 +840,7 @@ print(movie.title, movie.year, movie.oscars.count)  // "Dr. Strangelove 1964 2"
 
 Compare the two halves of this section. In Go, the same job takes about 200 lines of reflection that sets fields by name through `reflect.Value`. Here, the decoder *itself* never looks at `Movie`; it merely answers questions the compiler-generated `init(from:)` asks: "give me the `Int` for the key `year`." Type-checking the result is automatic, because `Movie` asked for an `Int`, and what the container returns is an `Int` or an error.
 
-(A complete `Decoder` has a few more methods than we've shown, such as the unkeyed and single-value container types. Writing them is Exercise 12.8.)
-
-**Exercise 12.8:** Write the missing `ListContainer` and `AtomContainer` types, including the `decode` methods for all of the integer and floating-point types. Use generics to avoid writing each one twice: `FixedWidthInteger` and `LosslessStringConvertible` can help.
+**Exercise 12.8:** The three containers repeat the same fifteen `decode` methods. The protocols require each one, but their bodies can still be shared. How far can you reduce the repetition? Then add `Int128` and `UInt128`, which the protocols support in Swift 6.
 
 **Exercise 12.9:** Make the keyed container track the `codingPath`, and use it to produce error messages that tell the user which field of which value was wrong, like `movie.oscars[1]: expected string, found 42`.
 

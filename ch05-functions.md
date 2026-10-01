@@ -941,7 +941,7 @@ exit bigSlowOperation (10.002113 seconds)
 
 A `defer` block can read the function's local variables but cannot change the function's result, since Swift has no named results. It also can't contain `return`, `break`, or `throw` statements that would transfer control out of it; a `defer` exists to clean up, not to change the outcome.
 
-As with any resource cleanup, it's worth asking whether `defer` is needed at all. For classes, `deinit` can release resources deterministically when the last reference goes away, and the newer noncopyable types (Section 13.5) let the compiler guarantee that a resource is consumed exactly once. Many APIs also provide a *with* function that manages a resource for the duration of a closure, like `Mutex.withLock` in Section 1.7, which is often the cleanest option of all.
+As with any resource cleanup, it's worth asking whether `defer` is needed at all. For classes, `deinit` can release resources deterministically when the last reference goes away, and noncopyable types (marked `~Copyable`, like the `Mutex` of Section 9.2) let the compiler guarantee that a resource has exactly one owner and is consumed exactly once. Many APIs also provide a *with* function that manages a resource for the duration of a closure, like `Mutex.withLock` in Section 1.7, which is often the cleanest option of all.
 
 **Exercise 5.16:** Write a function that copies one file to another, using `defer` to close both files. Make sure that if the copy fails partway, the partially written destination file is removed.
 

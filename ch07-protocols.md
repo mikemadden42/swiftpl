@@ -763,7 +763,13 @@ enum ParseError: Error, Equatable {
     case unexpectedCharacter(Character, at: Int)
 }
 
-#expect(throws: ParseError.unexpectedEnd) { try parse("1 +") }  // Swift Testing (Chapter 11)
+func parseNumber(_ s: String) throws(ParseError) -> Int {
+    guard let first = s.first else { throw .unexpectedEnd }
+    guard let n = Int(s) else { throw .unexpectedCharacter(first, at: 0) }
+    return n
+}
+
+#expect(throws: ParseError.unexpectedEnd) { try parseNumber("") }  // Swift Testing (Chapter 11)
 ```
 
 At the lowest level, system calls report failures with an integer error code, `errno`. The `swift-system` package provides a type, `Errno`, that wraps these codes and conforms to `Error`, with names like `.noSuchFileOrDirectory` and `.permissionDenied`, and Foundation's `POSIXError` does the same.

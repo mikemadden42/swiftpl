@@ -14,7 +14,7 @@ This book is meant to help you start using Swift effectively right away and to u
 
 ## The Origins of Swift
 
-Successful languages borrow from their ancestors, and you can learn a lot about why a language is the way it is by tracing those influences. Swift's own documentation describes it as drawing ideas "from Objective-C, Rust, Haskell, Ruby, Python, C#, CLU, and far too many others to list."
+Successful languages borrow from their ancestors, and you can learn a lot about why a language is the way it is by tracing those influences. Chris Lattner, Swift's creator, has described it as drawing ideas "from Objective-C, Rust, Haskell, Ruby, Python, C#, CLU, and far too many others to list."
 
 From **C** and **Objective-C**, Swift inherited its control-flow statements, its basic numeric types, and above all its role as a language that compiles to efficient machine code and works naturally with existing operating systems and libraries. Swift was designed from the first day to call C and Objective-C code and to be called by it, and this constraint shaped many early decisions. Objective-C's named arguments survive as Swift's *argument labels*: `insert(_:at:)` reads like Smalltalk at the call site.
 

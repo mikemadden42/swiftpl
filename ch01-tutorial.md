@@ -609,12 +609,17 @@ Alternatively, we can access the server from a web browser.
 It's easy to add features to the server. One useful addition is a specific URL that returns a status of some sort. For example, this version does the same echo but also counts the number of requests; a request to the URL `/count` returns the count so far, excluding `/count` requests themselves:
 
 ```swift
-// swiftpl/ch1/server2
-// Server2 is a minimal "echo" and counter server.
-import Hummingbird
+// swiftpl/ch1/server2/Sources/server2/Count.swift
 import Synchronization
 
+/// count is the number of requests handled so far.
 let count = Mutex(0)
+```
+
+```swift
+// swiftpl/ch1/server2/Sources/server2/main.swift
+// Server2 is a minimal "echo" and counter server.
+import Hummingbird
 
 let router = Router()
 router.get("/count", use: counter)
@@ -642,7 +647,7 @@ try await app.runService()
 
 The server has two handlers, and the request URL determines which one is called: a request for `/count` invokes `counter` and all others invoke `handler`. Behind the scenes, the server runs each incoming request in a separate task so that it can serve multiple requests simultaneously. However, if two concurrent requests try to update `count` at the same time, it might not be incremented consistently; the program would have a serious bug called a *data race* (Section 9.1). Swift 6 won't compile a program that has one: if `count` were a plain global `Int` variable, the compiler would reject both functions because they access shared mutable state from concurrent code.
 
-To make the counter safe, we store it in a `Mutex`, from the standard library's `Synchronization` module. The only way to get at the value inside a mutex is to call `withLock`, passing a closure that receives the protected value as an `inout` parameter. The mutex ensures that at most one task at a time is running such a closure. In the closure, `$0` refers to the closure's first parameter, so `{ $0 += 1 }` increments the count and `{ $0 }` returns its value. We'll look at mutexes and their alternative, *actors*, in Chapter 9.
+To make the counter safe, we store it in a `Mutex`, from the standard library's `Synchronization` module. We declare it in a separate file, `Count.swift`, rather than in `main.swift`. Variables in `main.swift` belong to its top-level code, which runs on the main actor, while a `let` in any other file is an ordinary global that any task may use, so long as its type is safe to share, as `Mutex` is. The only way to get at the value inside a mutex is to call `withLock`, passing a closure that receives the protected value as an `inout` parameter. The mutex ensures that at most one task at a time is running such a closure. In the closure, `$0` refers to the closure's first parameter, so `{ $0 += 1 }` increments the count and `{ $0 }` returns its value. We'll look at mutexes and their alternative, *actors*, in Chapter 9.
 
 As a richer example, the handler function can report on the headers and query parameters that it receives, which is useful for inspecting and debugging requests:
 

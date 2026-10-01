@@ -48,11 +48,11 @@ On a 64-bit machine, the output is:
 
 ```
 A: size=16 stride=16 alignment=8
-B: size=24 stride=24 alignment=8
+B: size=20 stride=24 alignment=8
 C: size=13 stride=16 alignment=8
 ```
 
-Each struct holds a one-byte `Bool`, a four-byte `Int32`, and an eight-byte `Int64`, a total of 13 bytes. Swift lays out the stored properties of a struct *in declaration order*, inserting padding so that each property is aligned to its own alignment. In `A`, the flag takes a byte, then three bytes of padding bring the `Int32` to offset 4, and the `Int64` lands at 8, for 16 bytes in all. In `B`, the `Int64` can't start until offset 8, leaving seven bytes of padding after the flag, and the `Int32` ends at 20, which pads out to 24. In `C`, the large member comes first and the small ones fill in after it, so nothing is wasted between them; the `size` is 13, but since the alignment is 8, an *array* of `C` places each element 16 bytes apart: the stride.
+Each struct holds a one-byte `Bool`, a four-byte `Int32`, and an eight-byte `Int64`, a total of 13 bytes. Swift lays out the stored properties of a struct *in declaration order*, inserting padding so that each property is aligned to its own alignment. In `A`, the flag takes a byte, then three bytes of padding bring the `Int32` to offset 4, and the `Int64` lands at 8, for 16 bytes in all. In `B`, the `Int64` can't start until offset 8, leaving seven bytes of padding after the flag, and the `Int32` ends at 20, so the size is 20, but the stride rounds up to 24 to keep the next element's `Int64` aligned. In `C`, the large member comes first and the small ones fill in after it, so nothing is wasted between them; the `size` is 13, but since the alignment is 8, an *array* of `C` places each element 16 bytes apart: the stride.
 
 The conclusion is the same as in Go: it pays to order the properties of a frequently allocated struct from largest alignment to smallest, if memory use matters. But Swift is more careful about promising anything. Unlike C, Swift makes *no guarantee* that stored properties are laid out in declaration order for ordinary structs, and in the future the compiler might reorder them. A struct whose layout *must* be exactly as written is one imported from C, which uses C's rules.
 
@@ -260,7 +260,7 @@ private func equal(_ x: Any, _ y: Any, _ seen: inout Set<Pair>) -> Bool {
     default: break
     }
     if let a = x as? any BinaryInteger, let b = y as? any BinaryInteger {
-        return a == b  // opens both existentials; same dynamic type, so this compiles to a typed ==
+        return integersEqual(a, b)  // opens both existentials
     }
 
     let mx = Mirror(reflecting: x)
@@ -308,6 +308,12 @@ private func equalChildren(_ mx: Mirror, _ my: Mirror, _ seen: inout Set<Pair>) 
         guard a.label == b.label, equal(a.value, b.value, &seen) else { return false }
     }
     return true
+}
+
+/// Passing existentials to a generic function opens them (Section 7.12),
+/// so that the heterogeneous == of BinaryInteger can be called.
+private func integersEqual<A: BinaryInteger, B: BinaryInteger>(_ a: A, _ b: B) -> Bool {
+    a == b
 }
 
 private func pair(_ value: Any) -> (Any, Any) {
