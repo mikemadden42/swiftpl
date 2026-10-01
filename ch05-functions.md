@@ -2,7 +2,7 @@
 
 Functions are how programs are divided into understandable pieces. A function gives a name to a computation, hides how it's done, and lets the same work be invoked from many places, by its author or by people who have never seen its body. Nearly everything interesting about how a language helps or hinders the organization of large programs shows up in its functions: how they're declared, how they receive and return values, how they report failure, and how they can be treated as values themselves.
 
-This chapter covers all of that for Swift. Much of it uses HTML documents as raw material, because their tree structure gives recursion and higher-order functions natural work to do, and the chapter ends by building a tool that checks a web site for broken links.
+This chapter covers all of that for Swift. Much of it uses HTML documents as raw material, because their tree structure gives recursion and higher-order functions natural work to do, and midway through, we build a tool that checks a web site for broken links.
 
 ## 5.1. Function Declarations
 
