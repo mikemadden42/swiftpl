@@ -301,7 +301,7 @@ Instances of classes live on the heap and are managed by *automatic reference co
 do {
     let scratch = TempFile(path: "/tmp/scratch")
     // ...use scratch...
-}  // the last reference disappears here: deinit runs and the file is removed
+}  // by here, the last reference is gone: deinit runs and the file is removed
 ```
 
 Reference counting has one blind spot: *cycles*. If object A holds a strong reference to B and B holds one back to A, neither count can reach zero, and both objects leak. Cycles are broken by making one of the references `weak`, which doesn't count toward keeping the object alive and becomes `nil` when the object is freed, or `unowned`, which doesn't count either and is assumed never to outlive its object:
@@ -313,7 +313,7 @@ final class TreeNode {
 }
 ```
 
-Closures can form cycles too: an object that stores a closure that refers back to the object. The usual cure is a *capture list*, `{ [weak self] in ... }`, described in Section 5.6.
+Closures can form cycles too: an object that stores a closure that refers back to the object. The usual cure is a *capture list*, `{ [weak self] in ... }`, described in Section 5.6.1. Section 6.9 returns to reference counting in more depth.
 
 ## 2.4. Assignments
 

@@ -561,6 +561,61 @@ func isSorted<T: Comparable>(_ values: [T]) -> Bool {
 print(isSorted(finishers.sorted()))  // "true"
 ```
 
+### 7.6.2. Defining New Operators
+
+Implementing `<` for `Finisher` gave an existing operator a new meaning for a new type. Swift's operators are ordinary functions with special syntax, so any type can implement them, as `static` functions in the type or an extension. Here's a two-dimensional vector with the arithmetic you'd expect:
+
+```swift
+// swiftpl/ch7/operators
+import Foundation
+
+struct Vector: Equatable {
+    var x: Double
+    var y: Double
+}
+
+extension Vector {
+    static func + (a: Vector, b: Vector) -> Vector { Vector(x: a.x + b.x, y: a.y + b.y) }
+    static func - (a: Vector, b: Vector) -> Vector { Vector(x: a.x - b.x, y: a.y - b.y) }
+    static func * (k: Double, v: Vector) -> Vector { Vector(x: k * v.x, y: k * v.y) }
+    static prefix func - (v: Vector) -> Vector { Vector(x: -v.x, y: -v.y) }
+    static func += (a: inout Vector, b: Vector) { a = a + b }
+}
+
+var position = Vector(x: 1, y: 2)
+let velocity = Vector(x: 0.5, y: -1)
+position += 2 * velocity
+print(position)  // "Vector(x: 2.0, y: 0.0)"
+```
+
+A unary operator is marked `prefix` or `postfix`, and a compound assignment such as `+=` takes its left operand `inout`. These overloads inherit the precedence of the operators they extend, so `a + 2 * b` groups the way it does for numbers.
+
+Swift also lets a program declare operators that don't exist yet. A new operator needs a declaration at file scope, saying whether it's `prefix`, `postfix`, or `infix`, and for an infix operator, which *precedence group* it belongs to. A precedence group sets how tightly the operator binds relative to other groups and which way a chain of them associates. Here's an exponentiation operator that binds more tightly than multiplication and groups to the right, as it does in mathematics, and a prefix square root:
+
+```swift
+// swiftpl/ch7/operators (continued)
+precedencegroup ExponentiationPrecedence {
+    associativity: right
+    higherThan: MultiplicationPrecedence
+}
+
+infix operator **: ExponentiationPrecedence
+prefix operator √
+
+func ** (base: Double, exponent: Double) -> Double { pow(base, exponent) }
+prefix func √ (x: Double) -> Double { x.squareRoot() }
+
+print(2 ** 3 ** 2)  // "512.0": 2 ** (3 ** 2)
+print(3 * 2 ** 2)   // "12.0": 3 * (2 ** 2)
+print(√16 + 1)      // "5.0"
+```
+
+The standard library declares groups for its own operators, from `BitwiseShiftPrecedence` and `MultiplicationPrecedence` at the tight end, through `AdditionPrecedence`, `RangeFormationPrecedence`, and `ComparisonPrecedence`, down to `AssignmentPrecedence`, and a new group places itself among them with `higherThan` and `lowerThan`. An infix operator declared without a group gets `DefaultPrecedence`, which binds just more tightly than the ternary conditional and doesn't associate at all, so `a ** b ** c` with such an operator would be an error until you add parentheses.
+
+Operator names are made of symbol characters such as `/ = - + ! * % < > & | ^ ~ ?` and many mathematical symbols from Unicode, like `√` and `⊕`. A few tokens, among them `=`, `->`, `//`, and `/*`, are reserved. Whitespace matters: an operator with whitespace on both sides, or on neither, is infix, one attached only to the following operand is prefix, and one attached only to the preceding operand is postfix. That's why `√16` works, and why `a **b` is an error: it's parsed as `a` followed by a prefix operator `**` applied to `b`.
+
+Use this power sparingly. Overloading `+`, `==`, or `<` for a type where they have their usual meaning makes code read naturally, and the standard library's protocols expect it. A new operator, by contrast, is a name that readers can't pronounce, can't easily search for, and must look up before they can understand any expression that uses it. New operators earn their keep in a few places: notation that's already standard in a field, such as `**` or `⊕` in mathematical code, and small domain-specific languages where a handful of operators appear on every line. Everywhere else, a method with a good name is clearer.
+
 **Exercise 7.7:** Print the results grouped by country, with the countries in alphabetical order and each country's runners in finishing order, using a single sort.
 
 **Exercise 7.8:** Implement a results table that remembers the order in which a user clicked column headings, sorting first by the most recent click, then by the one before, and so on, and reversing a column's direction when it's clicked twice in a row. Represent the state as an array of `KeyPathComparator<Finisher>`.

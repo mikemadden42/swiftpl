@@ -74,6 +74,7 @@ Example programs carry a label such as `swiftpl/ch1/hello`, which names the pack
 - 6.6 Encapsulation
 - 6.7 Classes and Inheritance
 - 6.8 Property Wrappers
+- 6.9 Automatic Reference Counting
 
 **[7. Protocols](ch07-protocols.md)**
 - 7.1 Protocols as Contracts
@@ -140,7 +141,8 @@ Example programs carry a label such as `swiftpl/ch1/hello`, which names the pack
 - 12.6 Example: Decoding S-Expressions
 - 12.7 Customizing Keys with `CodingKeys`
 - 12.8 Macros: Reflection at Compile Time
-- 12.9 A Word of Caution
+- 12.9 Result Builders
+- 12.10 A Word of Caution
 
 **[13. Low-Level Programming](ch13-low-level.md)**
 - 13.1 `MemoryLayout`: Size, Alignment, Stride, and Offset

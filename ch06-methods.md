@@ -2,7 +2,7 @@
 
 A *method* is a function that belongs to a type. Rather than writing `length(of: interval)`, you write `interval.length`; rather than `shift(&interval, by: 2)`, you write `interval.shift(by: 2)`. The difference looks cosmetic, but it changes how code is organized: the operations on a type are grouped with the type, a reader can discover them by typing a dot, and the type's author can keep its representation private while exposing only the operations that keep it valid. That combination of data with the operations that maintain it is the core of what's usually called *object-oriented programming*.
 
-Swift supports object-oriented programming in the classic style, with classes, inheritance, and overriding. But its everyday style differs from Java's or C++'s in two important ways. First, methods aren't reserved for classes: structs and enums have them too, and most Swift types are structs. Second, behavior is shared between types mostly through *protocols* and *extensions* rather than through inheritance. This chapter covers methods and the related ideas of extensions, mutation, composition, and encapsulation. Chapter 7 then takes up protocols.
+Swift supports object-oriented programming in the classic style, with classes, inheritance, and overriding. But its everyday style differs from Java's or C++'s in two important ways. First, methods aren't reserved for classes: structs and enums have them too, and most Swift types are structs. Second, behavior is shared between types mostly through *protocols* and *extensions* rather than through inheritance. This chapter covers methods and the related ideas of extensions, mutation, composition, and encapsulation, and then class inheritance, property wrappers, and how the memory of class instances is managed. Chapter 7 then takes up protocols.
 
 ## 6.1. Method Declarations
 
@@ -850,3 +850,134 @@ Their power is also their risk: a wrapper changes what assignment *means*, invis
 **Exercise 6.11:** Give `Clamped` a projected value that reports whether the most recent assignment had to be clamped, so that callers can write `if s.$volume { print("volume limited") }`.
 
 **Exercise 6.12:** Write a `@Logged` wrapper that prints a line whenever the property changes, showing the old and new values. Why might you want it to take the property's name as an argument?
+
+## 6.9. Automatic Reference Counting
+
+Section 2.3.4 introduced automatic reference counting (ARC), the way Swift manages the memory of class instances, and actors too. Each instance keeps a count of the *strong* references to it. Storing a reference in a variable, property, collection, or closure capture increments the count; overwriting or dropping one decrements it; and when the count reaches zero, the instance's `deinit` runs (Section 6.7.3) and its memory is freed. There's no garbage collector and no collection pause. Values of struct and enum types aren't counted at all, although a struct that contains references to class instances holds those references strongly, like any other variable.
+
+For most code, ARC is invisible. It matters in two situations: when objects refer to each other, and when the moment an object is freed matters.
+
+### 6.9.1. Reference Cycles
+
+Here's a document that can be shown in several windows. The document keeps track of its windows, and each window refers back to its document:
+
+```swift
+// swiftpl/ch6/documents
+final class Document {
+    let title: String
+    var windows: [Window] = []
+
+    init(title: String) { self.title = title }
+    deinit { print("closing document \(title)") }
+
+    func openWindow() {
+        windows.append(Window(document: self))
+    }
+}
+
+final class Window {
+    let document: Document  // strong: completes a cycle
+    init(document: Document) { self.document = document }
+    deinit { print("closing a window") }
+}
+
+do {
+    let report = Document(title: "Report")
+    report.openWindow()
+    report.openWindow()
+}
+print("done")
+```
+
+The program prints only `done`. When the `do` block ends, the constant `report` goes away, but the document's count doesn't reach zero, because each window still holds a strong reference to it, and the windows' counts don't reach zero, because the document's array holds them. No `deinit` ever runs, and the three objects stay in memory, unreachable, until the program exits. This is a *reference cycle*, and it's the one kind of leak that ARC can't prevent on its own.
+
+The fix is to decide which side owns which. A document owns its windows; a window merely refers to the document it shows. The reference back to the owner should therefore not keep it alive. Swift offers two kinds of non-owning reference:
+
+- A `weak` reference doesn't increment the count, and is set to `nil` automatically when its object is freed. It must be a `var` of optional type.
+- An `unowned` reference doesn't increment the count either, but it's non-optional, because it promises that the object will outlive the reference. Using an `unowned` reference after its object has been freed is a programming error, and traps (Section 5.9).
+
+A window can't exist without its document, so `unowned` expresses the relationship exactly:
+
+```swift
+final class Window {
+    unowned let document: Document
+    init(document: Document) { self.document = document }
+    deinit { print("closing a window") }
+}
+```
+
+Now the program prints:
+
+```
+closing document Report
+closing a window
+closing a window
+done
+```
+
+When `report` disappears, the document's count reaches zero. Its `deinit` runs, then its stored properties are destroyed, releasing the array, which releases the windows.
+
+Choose `weak` when the referenced object can legitimately disappear first and the code holding the reference should cope, as with a delegate, an observer, or a cache entry. Choose `unowned` when the lifetimes are tied, as here, and a dangling reference would be a bug. When in doubt, `weak` is the safe choice: its worst case is a `nil` you have to handle rather than a trap.
+
+### 6.9.2. Closures and Capture Lists
+
+Closures are reference types, and a closure holds strong references to the class instances it captures. An object that stores a closure that uses `self` therefore creates a cycle, from the object to the closure and back:
+
+```swift
+// swiftpl/ch6/ticker
+final class Ticker {
+    var count = 0
+    var onTick: (() -> Void)?
+
+    init() {
+        onTick = { self.count += 1 }  // cycle: self -> onTick -> self
+    }
+    deinit { print("ticker freed") }
+}
+```
+
+This is the situation described in Section 5.6.1, and a *capture list* breaks the cycle. Capture lists accept the same `weak` and `unowned` modifiers as properties, with the same meanings. Since `onTick` belongs to the ticker, it can't be called after the ticker is gone, so `unowned` fits:
+
+```swift
+onTick = { [unowned self] in self.count += 1 }
+```
+
+A capture list can also capture a *value* instead of the object it came from. `[title = self.title]` copies the title into the closure when the closure is created, so the closure doesn't need `self` at all. That's often the cleanest fix, when the closure needs only a property or two.
+
+Not every closure that mentions `self` causes a cycle. A non-escaping closure, like the argument to `map` or `sorted(by:)`, is gone by the time the call returns. An escaping closure that the object doesn't store, directly or indirectly, such as the body of a `Task` that finishes, keeps the object alive only until the closure itself is released. That might delay the object's `deinit`, which is sometimes exactly what's wanted, but it doesn't leak. The cycles to look for are closures stored in properties of the objects they capture, or in something those objects own, such as a timer or a notification observer.
+
+### 6.9.3. When Objects Are Freed
+
+Because counting is deterministic, a `deinit` runs as soon as the last strong reference disappears, which makes it a reasonable place to release resources such as file descriptors and locks. But "the last strong reference disappears" means when the reference is last *used*, not necessarily at the end of the variable's scope. The optimizer is free to release an object right after its last use:
+
+```swift
+do {
+    let session = Session()
+    let token = session.token
+    send(token)  // session may already have been freed here
+}
+```
+
+Usually this doesn't matter. It does matter when an object's `deinit` undoes something that other code still depends on, such as a lock file that another process checks, or a handle that a C library uses (Chapter 13). `withExtendedLifetime(session) { ... }` guarantees that `session` stays alive until the closure returns. Better still, give such resources an explicit `close()` method, and treat `deinit` as a safety net.
+
+Reference counting has a cost. Each increment and decrement is an atomic operation, since references can be shared between threads, and code that copies references in a tight loop can spend noticeable time on them. The optimizer removes many of these operations, and profiling (Section 11.5) shows when the rest matter. Value types avoid the cost entirely, which is one more reason Swift code starts with structs.
+
+To find leaks, Xcode's memory graph debugger shows the objects alive in a running program and the references between them, and the Instruments Leaks template reports unreachable cycles. A test can check for leaks directly, by holding only a weak reference to an object and expecting it to be `nil` once the strong references are gone:
+
+```swift
+@Test func documentIsFreed() {
+    weak var weakDocument: Document?
+    do {
+        let document = Document(title: "Test")
+        document.openWindow()
+        weakDocument = document
+    }
+    #expect(weakDocument == nil)
+}
+```
+
+**Exercise 6.13:** Build a three-level tree from the `TreeNode` type of Section 2.3.4 and write a test like `documentIsFreed` that checks that the whole tree is freed. Then make `parent` a strong reference and confirm that the test fails.
+
+**Exercise 6.14:** Write a program that keeps a strong reference to one of a document's windows after the document itself has been freed, and then reads the window's `document` property. What happens when `Window` holds `unowned let document: Document`? Change it to `weak var document: Document?`, and decide what a window should display when its document is gone.
+
+**Exercise 6.15:** Delegate properties are conventionally `weak`. Write a `Downloader` class with a `delegate` property of protocol type that reports progress, and explain why the protocol must be declared `protocol DownloaderDelegate: AnyObject` for the property to be `weak`.

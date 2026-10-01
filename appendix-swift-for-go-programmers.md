@@ -31,9 +31,10 @@ This book's structure follows that of a well-known book about Go, and many reade
 | `sync.Mutex`, `sync/atomic` | `Mutex`, `Atomic`, actors | 9.2, 9.3 |
 | race detector | compile-time checking, TSan | 9.1, 9.6 |
 | `go build`, `go test`, `gofmt` | `swift build`, `swift test`, `swift format` | 10.7, Ch. 11 |
-| `reflect` | `Mirror`, `Codable`, macros | Ch. 12 |
+| fixed set of operators | operator overloading, custom operators | 7.6.2 |
+| `reflect`, `go generate` | `Mirror`, `Codable`, macros, result builders | Ch. 12 |
 | `unsafe`, cgo | unsafe pointers, direct C import | Ch. 13 |
-| garbage collection | automatic reference counting | 2.3.4 |
+| garbage collection | automatic reference counting | 2.3.4, 6.9 |
 
 ## A.2. Declarations and Initialization
 
@@ -159,7 +160,7 @@ Swift has no `recover`. Programming errors, such as an out-of-range index, a for
 
 ## A.10. Memory Management
 
-Go uses a tracing garbage collector. Swift uses *automatic reference counting* (Section 2.3.4): each class instance counts the references to it and is freed the moment the count reaches zero, so cleanup in `deinit` is deterministic and there are no collection pauses. The cost is that reference cycles aren't collected automatically; they must be broken with `weak` or `unowned` references, and the most common source of them, closures that capture `self`, is handled with a capture list such as `[weak self]` (Section 5.6.1).
+Go uses a tracing garbage collector. Swift uses *automatic reference counting* (Section 2.3.4): each class instance counts the references to it and is freed the moment the count reaches zero, so cleanup in `deinit` is deterministic and there are no collection pauses. The cost is that reference cycles aren't collected automatically; they must be broken with `weak` or `unowned` references, and the most common source of them, closures that capture `self`, is handled with a capture list such as `[weak self]` (Sections 5.6.1 and 6.9).
 
 ## A.11. Tooling
 
