@@ -203,7 +203,14 @@ print(Double(bitPattern: 0x4009_21FB_5444_2D18))  // "3.141592653589793"
 
 // 2. Reinterpreting a value of the same size
 let bits = unsafeBitCast(d, to: UInt64.self)  // same as d.bitPattern
-// 3. Rebinding memory to a different type
+
+// 3. Viewing memory bound to one type as another
+var pair: (UInt32, UInt32) = (1, 2)
+withUnsafeMutablePointer(to: &pair) { p in
+    p.withMemoryRebound(to: UInt32.self, capacity: 2) { words in
+        print(words[0] + words[1])  // "3": the tuple's elements, read as UInt32s
+    }
+}
 ```
 
 Use the purpose-built conversions (`bitPattern`, `init(bitPattern:)`, `init(truncatingIfNeeded:)`) wherever they exist. `unsafeBitCast` checks only that the two types have the same size. Rebinding memory is subtler still. Swift assumes that memory *bound* to one type isn't accessed as an unrelated type, and the optimizer relies on that assumption. Changing what a region of memory holds must go through `bindMemory(to:capacity:)` or `withMemoryRebound(to:capacity:)`, and byte-level access to typed memory should go through raw pointers. Code that breaks these rules may work in a debug build and fail mysteriously in an optimized one.
@@ -421,7 +428,9 @@ public struct SQLiteError: Error, CustomStringConvertible {
 /// SQLITE_TRANSIENT is a C macro that casts -1 to a function pointer,
 /// which Swift can't import; this reproduces it. It tells SQLite to copy
 /// bound strings, since Swift's temporary C strings don't outlive the call.
-private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+private var SQLITE_TRANSIENT: sqlite3_destructor_type {
+    unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+}
 
 /// A Database is a connection to an SQLite database.
 public final class Database {
@@ -561,7 +570,7 @@ let context = Unmanaged.passUnretained(handler).toOpaque()  // a plain pointer
 
 ### 13.4.4. Exposing Swift to C
 
-Calls can also go the other way. The `@_cdecl("name")` attribute exports a Swift function under a C name with the C calling convention, which is how Swift code can serve as a plug-in for a C program, and the compiler can generate a C header for a module with `-emit-clang-header-path`. For larger interfaces, Swift's C++ interoperability is usually the better route. Enabling it on a target lets Swift import C++ headers, including classes, instantiated templates, and standard library containers, and lets C++ call into Swift:
+Calls can also go the other way. The `@c` attribute (SE-0495) exports a Swift function to C, optionally under a different name, as in `@c(my_callback)`, with the C calling convention. Compilers that predate it offer the underscored, unofficial `@_cdecl("name")`, which much existing code uses. This is how Swift code can serve as a plug-in for a C program, and the compiler can generate a C header for a module with `-emit-clang-header-path`. For larger interfaces, Swift's C++ interoperability is usually the better route. Enabling it on a target lets Swift import C++ headers, including classes, instantiated templates, and standard library containers, and lets C++ call into Swift:
 
 ```swift
 // Package.swift
@@ -570,7 +579,7 @@ Calls can also go the other way. The `@_cdecl("name")` attribute exports a Swift
 
 ### 13.4.5. Memory Safety Annotations in C Headers
 
-A C pointer parameter says nothing about how many elements it refers to or how long it must remain valid, which is why C functions import with unsafe pointer types. Swift 6.2 can use Clang's *bounds-safety* and *lifetime* annotations to do better. If a header marks a parameter with, for example, `__counted_by(n)` to say that it points to `n` elements, Swift imports the function with a safe parameter type such as a `Span` and passes the count for you. Libraries that adopt these annotations become safer to call from Swift with no change to their implementation.
+A C pointer parameter says nothing about how many elements it refers to or how long it must remain valid, which is why C functions import with unsafe pointer types. Starting with Swift 6.2, the compiler can use Clang's *bounds-safety* and *lifetime* annotations to do better. If a header marks a parameter with, for example, `__counted_by(n)` to say that it points to `n` elements, Swift can generate a safe overload of the function, alongside the original, that takes a `Span` and passes the count for you. Libraries that adopt these annotations become safer to call from Swift with no change to their implementation. Support is new and still expanding, and may need to be enabled with a compiler setting, so check the documentation for your toolchain.
 
 ## 13.5. Another Word of Caution
 

@@ -502,6 +502,8 @@ The first fix that comes to mind is a mutex around the dictionary:
 
 ```swift
 // swiftpl/ch9/memo2
+import Synchronization
+
 final class Memo<Key: Hashable & Sendable, Value: Sendable>: Sendable {
     typealias Function = @Sendable (Key) async throws -> Value
 

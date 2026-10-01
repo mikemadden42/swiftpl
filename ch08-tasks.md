@@ -635,6 +635,11 @@ Imagine a resource available from several mirrors, some of which may be slow on 
 
 ```swift
 // swiftpl/ch8/fastest
+import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 func fastestMirror() async throws -> Data {
     try await withThrowingTaskGroup(of: Data.self) { group in
         group.addTask { try await request("https://asia.example.com") }
