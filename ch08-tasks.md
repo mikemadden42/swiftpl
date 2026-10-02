@@ -951,8 +951,9 @@ let walk = Task {
 }
 
 Thread.detachNewThread {
-    _ = readLine()  // read a single line
-    walk.cancel()
+    if readLine() != nil {  // a line was entered, not the end of input
+        walk.cancel()
+    }
 }
 
 let usage = await walk.value
