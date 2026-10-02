@@ -84,7 +84,7 @@ To check for races, the compiler needs to know which values are safe to hand fro
 
 - A struct or enum is `Sendable` when everything it stores is `Sendable`. For types that aren't `public`, the compiler works this out by itself. Numbers, strings, and the other basic types are `Sendable`, and so are arrays, dictionaries, and sets of `Sendable` elements.
 - Every actor is `Sendable`, because it guards its own state.
-- A `final` class is `Sendable` if all its stored properties are `let`s of `Sendable` type. A class that guards mutable state with its own lock may claim `@unchecked Sendable`, which tells the compiler to take the programmer's word for it.
+- A `final` class is `Sendable` if it has no superclass (other than `NSObject`) and all its stored properties are `let`s of `Sendable` type. A class that guards mutable state with its own lock may claim `@unchecked Sendable`, which tells the compiler to take the programmer's word for it.
 - A closure is `Sendable` when its type is marked `@Sendable`, which requires that it capture only `Sendable` values and never capture a variable that could be mutated.
 
 The compiler applies these rules wherever a value moves between concurrent contexts: when a closure is handed to `Task` or `addTask`, when an argument is passed to an actor or a result comes back from one, when a value is yielded into an `AsyncStream`. A closure that would mutate a shared variable from a child task, for instance, is rejected:

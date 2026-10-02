@@ -231,7 +231,7 @@ It's worth listing the ways pointer code goes wrong, because each is a mistake t
 
 *Concurrency.* Pointers aren't `Sendable`. Two tasks sharing one are in data-race territory unless they're synchronized by hand.
 
-Tools help catch these errors at run time. The Address Sanitizer (`swift build --sanitize=address`) detects out-of-bounds accesses, use-after-free, and leaks; the Thread Sanitizer (Section 9.6) detects races; and Valgrind is available on Linux. Run the tests of any code containing unsafe constructs under them regularly.
+Tools help catch these errors at run time. The Address Sanitizer (`swift build --sanitize=address`) detects out-of-bounds accesses and use-after-free, and on Linux also leaks; the Thread Sanitizer (Section 9.6) detects races; and Valgrind is available on Linux. Run the tests of any code containing unsafe constructs under them regularly.
 
 ## 13.3. Example: Reading a Binary File Header
 
@@ -376,7 +376,8 @@ void *                     UnsafeMutableRawPointer?
 const char *               UnsafePointer<CChar>?   (accepts a Swift String as an argument)
 pointer to opaque struct   OpaquePointer?
 struct S                   struct S, with the same members and an initializer
-enum E                     struct E, with static constants (or a Swift enum for NS_ENUM)
+enum E                     struct E: RawRepresentable, with each case a global constant
+                           (a Swift enum for NS_ENUM, an OptionSet for NS_OPTIONS)
 function pointer           @convention(c) (...) -> ...
 #define N 42               let N: Int32 = 42   (simple constant macros only)
 ```

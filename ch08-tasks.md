@@ -658,6 +658,8 @@ func request(_ host: String) async throws -> Data {
 
 `group.next()` returns the first result to arrive. The `defer` cancels the remaining children on the way out, and, because the group is structured, `withThrowingTaskGroup` doesn't actually return until those losers have wound down. `URLSession` notices cancellation and abandons its request, so that happens almost immediately. No losing request can be left running in the background.
 
+Note that "first result" includes failures. If one mirror fails quickly, perhaps because its host name doesn't resolve, `next()` rethrows that error and `fastestMirror` gives up, even though the other mirrors might have succeeded. Whether that's right depends on the application; Exercise 8.11 asks for the alternative.
+
 Racing an operation against a timer gives a timeout:
 
 ```swift
@@ -741,7 +743,7 @@ When the sources are already asynchronous sequences, the `merge` function from `
 
 **Exercise 8.10:** Rewrite `quiz` using `merge` and `AsyncTimerSequence` from `swift-async-algorithms`.
 
-**Exercise 8.11:** Write a version of `download` (Section 1.5) that takes several URLs for the same resource, requests them all concurrently, prints whichever response arrives first, and cancels the others.
+**Exercise 8.11:** Write a version of `download` (Section 1.5) that takes several URLs for the same resource, requests them all concurrently, prints whichever successful response arrives first, and cancels the others. A request that fails shouldn't end the race unless every request has failed.
 
 ## 8.8. Example: Concurrent Directory Traversal
 
@@ -864,7 +866,8 @@ enum Event: Sendable {
 }
 
 let verbose = CommandLine.arguments.contains("-v")
-let roots = CommandLine.arguments.dropFirst().filter { $0 != "-v" }.map { URL(filePath: $0) }
+let paths = CommandLine.arguments.dropFirst().filter { $0 != "-v" }
+let roots = (paths.isEmpty ? ["."] : paths).map { URL(filePath: $0) }
 let (events, eventsIn) = AsyncStream.makeStream(of: Event.self)
 
 Task.detached {

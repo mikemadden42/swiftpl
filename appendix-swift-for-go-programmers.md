@@ -143,7 +143,7 @@ Go added generics in version 1.18 with deliberately limited features. Swift has 
 Go's model is goroutines communicating over channels. Swift's is *structured concurrency* (Chapter 8):
 
 - A `go f()` statement starts work that runs independently. Swift's closest equivalent is `Task { await f() }`, but idiomatic Swift prefers *child tasks* created with `async let` or a task group, which can't outlive the scope that creates them, so they can't leak.
-- `sync.WaitGroup` becomes a task group: `withTaskGroup` doesn't return until every child has finished, and if a child throws, the remaining children are cancelled automatically (Section 8.5).
+- `sync.WaitGroup` becomes a task group: `withTaskGroup` doesn't return until every child has finished, and in a `withThrowingTaskGroup`, an error that a child throws surfaces in the parent and, as it propagates out of the group, cancels the remaining children (Section 8.5).
 - Channels become asynchronous sequences. `AsyncStream` is a buffered channel with separate sending and receiving ends; `AsyncChannel`, from the `swift-async-algorithms` package, is closer to an unbuffered Go channel (Section 8.4).
 - `select` becomes either a race between child tasks in a task group, where the first result wins and the rest are cancelled, or a single stream fed by several producers (Section 8.7).
 - `context.Context` cancellation is built in: cancelling a task cancels all its children, and asynchronous APIs check for cancellation themselves (Section 8.9).

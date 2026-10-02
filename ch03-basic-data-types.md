@@ -505,7 +505,7 @@ print(phrase.split(separator: " "))  // "["Swift", "on", "Linux"]"
 
 Slicing a string, whether with a range of indices or with methods like `prefix`, gives a `Substring`. A substring shares the original string's storage, so creating one is cheap, but it also keeps the whole original alive. Substrings are for short-lived use while processing text; convert to `String` before storing one: `let name = String(phrase.prefix(5))`.
 
-String comparison follows Unicode *canonical equivalence*: two strings are equal if they contain the same characters, however those characters are encoded, so the precomposed "é" (U+00E9) and "e" followed by U+0301 compare equal. The ordering used by `<` compares Unicode scalar values, which is consistent and fast, good for sorted keys and binary search, but it isn't the alphabetical order a person expects. For text shown to users, sort with Foundation's `localizedStandardCompare(_:)`.
+String comparison follows Unicode *canonical equivalence*: two strings are equal if they contain the same characters, however those characters are encoded, so the precomposed "é" (U+00E9) and "e" followed by U+0301 compare equal. The ordering used by `<` compares the Unicode scalar values of the strings' canonically normalized forms, so it agrees with `==`. That ordering is consistent and fast, good for sorted keys and binary search, but it isn't the alphabetical order a person expects. For text shown to users, sort with Foundation's `localizedStandardCompare(_:)`.
 
 Strings are values. A `var` string can be changed in place with `append`, `+=`, `insert`, and `remove`, and changing one string never changes another, though, thanks to copy-on-write (Section 4.2), copies share storage until one of them is modified.
 
