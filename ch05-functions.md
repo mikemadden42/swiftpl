@@ -875,7 +875,7 @@ Before reaching for `defer`, check whether the resource can manage itself. A cla
 
 ## 5.9. Traps
 
-The compiler catches many mistakes, but some can be detected only while the program runs: an array index out of range, a force-unwrapped `nil`, an integer overflow, an integer conversion that loses information. When Swift detects one of these, the program *traps*: it stops at once, with a message describing what went wrong.
+The compiler catches many mistakes, but some can be detected only while the program runs: an array index out of range, a force-unwrapped `nil`, an integer overflow, an integer conversion that loses information. When Swift detects one of these, the program *traps*: it stops at once, usually with a message describing what went wrong.
 
 A trap isn't an exception, and it can't be caught. No `catch` clause sees it, and `defer` blocks and `deinit`s don't run. The program prints a diagnostic and a backtrace and terminates:
 

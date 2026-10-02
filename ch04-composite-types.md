@@ -170,7 +170,7 @@ print(capacities)
 On one 64-bit system, this printed:
 
 ```
-[2, 4, 8, 16, 32, 64, 128]
+[2, 4, 8, 16, 36, 76, 156]
 ```
 
 The details of the growth policy are up to the implementation and vary with element size. When you know how many elements are coming, `reserveCapacity(_:)` allocates once up front. Better still, create the array in one step, with `Array(someSequence)` or `map`, which size the buffer correctly from the start.
@@ -779,10 +779,17 @@ public struct Daily: Decodable, Sendable {
     public var temperature2mMax: [Double?]
     public var temperature2mMin: [Double?]
     public var precipitationSum: [Double?]
+
+    enum CodingKeys: String, CodingKey {
+        case time
+        case temperature2mMax = "temperature_2m_max"
+        case temperature2mMin = "temperature_2m_min"
+        case precipitationSum = "precipitation_sum"
+    }
 }
 ```
 
-The service uses `snake_case` keys, while Swift uses `camelCase` names. Rather than writing `CodingKeys` for every property, we'll set the decoder's `keyDecodingStrategy` to `.convertFromSnakeCase`, which converts `temperature_2m_max` to `temperature2mMax` and `precipitation_sum` to `precipitationSum`. The `daily_units` object isn't declared, so it's skipped. The arrays of measurements have optional elements because the service reports `null` for any value it can't provide.
+The service uses `snake_case` keys, while Swift uses `camelCase` names, so `Daily` maps between them with `CodingKeys`. `Forecast` needs none, since its keys are single words. Decoders also offer a shortcut, setting `keyDecodingStrategy` to `.convertFromSnakeCase`, which renames every key by rule, turning `precipitation_sum` into `precipitationSum`. But the rule capitalizes each word after an underscore, digits and all, so `temperature_2m_max` would become `temperature2MMax`, and the decoder would fail to find `temperature2mMax`. Explicit keys leave no doubt. The `daily_units` object isn't declared, so it's skipped. The arrays of measurements have optional elements because the service reports `null` for any value it can't provide.
 
 The function that performs the request builds its URL with `URLComponents`, which takes care of escaping query parameters correctly, and checks the HTTP status before decoding:
 
@@ -810,9 +817,7 @@ public func fetchForecast(latitude: Double, longitude: Double) async throws -> F
     if let http = response as? HTTPURLResponse, http.statusCode != 200 {
         throw WeatherError.badStatus(http.statusCode)
     }
-    let decoder = JSONDecoder()
-    decoder.keyDecodingStrategy = .convertFromSnakeCase
-    return try decoder.decode(Forecast.self, from: data)
+    return try JSONDecoder().decode(Forecast.self, from: data)
 }
 ```
 
@@ -924,6 +929,8 @@ The reliable defense is to escape *everything* that comes from outside, automati
 
 ```swift
 // swiftpl/ch4/weather/Sources/forecastpage/HTML.swift
+import Weather
+
 /// HTML is a fragment of trusted HTML markup.
 struct HTML: ExpressibleByStringInterpolation, CustomStringConvertible {
     let description: String
@@ -1424,7 +1431,7 @@ case (false, _):
     // ...
 }
 // error: switch must be exhaustive
-// note: add missing case: '(true, .voucher(code: _))'
+// note: add missing case: '(true, .voucher(code: let code))'
 ```
 
 For types with too many values to enumerate, such as integers and strings, a `switch` needs a `default` or a final catch-all pattern.

@@ -43,14 +43,17 @@ The arithmetic operators work on integers and floating-point numbers alike, exce
 
 ### 3.1.1. Overflow
 
-When an arithmetic result doesn't fit in its type, the operation *overflows*. Languages disagree about what should happen then. In C, signed overflow is undefined behavior; in Java and Go, the result silently wraps around. Swift does neither. Overflow is treated as a bug, and the program *traps*, stopping with a diagnostic:
+When an arithmetic result doesn't fit in its type, the operation *overflows*. Languages disagree about what should happen then. In C, signed overflow is undefined behavior; in Java and Go, the result silently wraps around. Swift does neither. Overflow is treated as a bug, and the program *traps*, stopping at once:
 
 ```swift
-var brightness: UInt8 = 250
-brightness += 10  // Fatal error: Arithmetic overflow
+func brighten(_ level: UInt8, by step: UInt8) -> UInt8 {
+    level + step
+}
+
+print(brighten(250, by: 10))  // traps: arithmetic overflow
 ```
 
-When the compiler can see the overflow, as in `let b: UInt8 = 250 + 10`, it reports an error at build time instead.
+An overflow trap prints no message of its own; a debugger, or a crash report, shows the cause as an arithmetic overflow. When the compiler can see the overflow, as in `let b: UInt8 = 250 + 10`, it reports an error at build time instead.
 
 The reasoning is that an overflowed value is almost never what anyone intended, and silently producing one has caused real security holes: a length calculation wraps around to a small number, a buffer is allocated too small, and data is written past its end. Overflow checks are cheap, since the processor sets a flag on overflow anyway, and the optimizer removes the ones it can prove unnecessary.
 
@@ -204,7 +207,7 @@ Swift's main floating-point types are `Float` (32 bits), `Double` (64 bits), and
 
 ```swift
 let big: Float = 16_777_217  // 2^24 + 1
-print(big)  // "1.6777216e+07": the nearest Float is 2^24
+print(big)  // "16777216.0": the nearest Float is 2^24
 ```
 
 Use `Float` where memory or bandwidth dominates, such as large arrays of samples or GPU data, and `Double` everywhere else. The static properties `greatestFiniteMagnitude`, `leastNonzeroMagnitude`, `ulpOfOne`, and others describe each type's limits.
@@ -700,7 +703,7 @@ Once a literal has become a value, it's an ordinary value of its type, and ordin
 
 ```swift
 let x = 1 << 70  // 0: an Int smart-shifted past its width
-let y = 9_223_372_036_854_775_807 + 1  // compile error: arithmetic operation overflows
+let y = 9_223_372_036_854_775_807 + 1  // compile error: arithmetic operation '9223372036854775807 + 1' (on type 'Int') results in an overflow
 ```
 
 User-defined types can opt in to literal syntax. We gave `Kilometers` integer and floating-point literals in Section 2.5, and many standard types use the protocols too: an array literal can create a `Set`, and a string literal can create a `Character` or a `Unicode.Scalar`, as we did in Section 3.1.

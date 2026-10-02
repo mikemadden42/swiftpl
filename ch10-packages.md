@@ -375,13 +375,27 @@ $ swift package describe
 Name: eval
 Manifest display name: eval
 Path: /home/user/eval
-Tools version: 6.0
+Tools version: 6.4
 Dependencies:
+    Type:
+        sourceControl
+    Identity:
+        swift-argument-parser
     Url: https://github.com/apple/swift-argument-parser.git
-    Version: 1.5.0..<2.0.0
+    Requirement:
+        Range:
+            Lower bound:
+                1.5.0
+            Upper bound:
+                2.0.0
+
 Platforms:
     Name: macos
     Version: 14.0
+
+    Name: ios
+    Version: 17.0
+
 Products:
     Name: Eval
     Type:

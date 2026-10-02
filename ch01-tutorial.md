@@ -418,10 +418,10 @@ func measure(_ url: String) async -> Timing {
 
 ```
 $ .build/debug/timeall https://www.swift.org https://forums.swift.org https://swiftpackageindex.com
-1. https://www.swift.org  0.138212 seconds  21342 bytes
-2. https://forums.swift.org  0.391677 seconds  86104 bytes
-3. https://swiftpackageindex.com  0.702945 seconds  148203 bytes
-total: 0.704116 seconds
+1. https://www.swift.org  0.138212458 seconds  21342 bytes
+2. https://forums.swift.org  0.391677125 seconds  86104 bytes
+3. https://swiftpackageindex.com  0.702945667 seconds  148203 bytes
+total: 0.704116083 seconds
 ```
 
 The total is about the time of the slowest request, not the sum of all three, because they ran at the same time. (The timings are illustrative; yours will differ.)

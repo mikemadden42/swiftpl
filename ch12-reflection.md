@@ -429,7 +429,7 @@ To choose a property by *name*, put key paths in a dictionary. The set of access
 
 ```swift
 // swiftpl/ch12/keypath (continued)
-let fields: [String: PartialKeyPath<Person>] = [
+let fields: [String: PartialKeyPath<Person> & Sendable] = [
     "name": \Person.name,
     "age": \Person.age,
 ]
@@ -441,7 +441,7 @@ func get(_ name: String, from p: Person) -> Any? {
 print(get("age", from: p) as Any)  // "Optional(37)"
 ```
 
-`PartialKeyPath<Root>` erases the property type so that paths to properties of different types can share a dictionary; reading through one yields `Any`. (`AnyKeyPath` erases the root type as well.) Writing requires casting back to a `WritableKeyPath` of the right types.
+`PartialKeyPath<Root>` erases the property type so that paths to properties of different types can share a dictionary; reading through one yields `Any`. (`AnyKeyPath` erases the root type as well.) Key path types aren't `Sendable` in general, since a path can capture subscript arguments, so the table's type adds `& Sendable`; without it, the global table couldn't be used safely from `get`, which may run on any task (Section 9.1). Key path literals like `\Person.name` capture nothing and are inferred `Sendable`. Writing requires casting back to a `WritableKeyPath` of the right types.
 
 Key paths are everywhere in modern Swift APIs, often in places that look dynamic at first glance: `\.name` passed where a closure is expected, `sorted(using: KeyPathComparator(\.age))`, SwiftUI bindings, the change tracking of `@Observable`, and SwiftData predicates. In each case, the compiler has checked the path.
 

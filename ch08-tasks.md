@@ -836,6 +836,17 @@ func walkDir(_ dir: URL) async -> Usage {
 }
 ```
 
+Because `walkDir` is now `async`, it can no longer be passed to `map`, which expects a synchronous function. The main code awaits each root's total instead:
+
+```swift
+// swiftpl/ch8/dirsize2 (continued)
+// Replaces dirsize1's `let usage = roots.map(walkDir).reduce(Usage(), +)`.
+var usage = Usage()
+for root in roots {
+    usage = usage + (await walkDir(root))
+}
+```
+
 The shape of the code mirrors the shape of the data. Files are counted on the spot; each subdirectory gets a child task, which may spawn children of its own; and each level adds its own files to the totals reported by its children. The result is a tree of tasks with the same structure as the tree of directories, and structured concurrency guarantees that when the top-level call returns, every task in that tree has finished.
 
 `entries(of:)` makes blocking system calls, which, as Section 8.5 warned, can tie up the thread pool. Here the pool's small size works in our favor: at most one directory listing per core can be in progress, which keeps the program from flooding the file system with requests. On a machine with a fast SSD, this version finishes several times sooner than the sequential one.

@@ -183,7 +183,7 @@ A value can be assigned to a variable of protocol type only if its type conforms
 var out: any TextOutputStream
 out = ""  // OK: String conforms
 out = Transcript()  // OK: Transcript conforms
-out = 42  // compile error: 'Int' does not conform to 'TextOutputStream'
+out = 42  // compile error: cannot assign value of type 'Int' to type 'any TextOutputStream'
 ```
 
 And through a protocol type, only the protocol's members are visible:
@@ -352,7 +352,9 @@ $ swift run pace --distance 10mi --time 1.5h
 5:36 per km
 $ swift run pace --distance 3furlongs --time 1m
 Error: The value '3furlongs' is invalid for '--distance <distance>'
+Help:  --distance <distance>  the distance, like 5km or 3.1mi
 Usage: pace [--distance <distance>] --time <time>
+  See 'pace --help' for more information.
 ```
 
 `ArgumentParser` knows nothing about kilometers or durations. It knows only that it can call `init?(argument:)` on any `ExpressibleByArgument` type. Where `TextOutputStream` let `print` *consume* any destination, a protocol whose requirement is an initializer lets a library *produce* values of any conforming type.
@@ -1509,10 +1511,10 @@ for article in reader.articles {
 
 ```
 $ download https://www.swift.org/atom.xml | swift run feed
-Announcing Swift 6.4
-    https://www.swift.org/blog/swift-6.4-released/
+Swift 6.4 Released
+    https://swift.org/blog/swift-6.4-released/
 Swift on Embedded Devices: A Progress Report
-    https://www.swift.org/blog/embedded-progress/
+    https://swift.org/blog/embedded-progress/
 ...
 ```
 

@@ -208,7 +208,7 @@ func transfer(_ amount: Double, from source: inout Double, to target: inout Doub
     target += amount
 }
 
-transfer(10, from: &savings, to: &savings)  // error: overlapping accesses to 'savings'
+transfer(10, from: &savings, to: &savings)  // error: inout arguments are not allowed to alias each other
 ```
 
 When the compiler can't prove that accesses don't overlap, it inserts a check that runs while the program executes. This *Law of Exclusivity* rules out the confusing bugs that arise when two names secretly refer to the same memory, and lets the optimizer assume that an `inout` parameter isn't changed behind its back.
@@ -466,7 +466,7 @@ But they still can't be mixed with miles:
 
 ```swift
 let m = kmToMiles(marathon)
-print(marathon == m)  // compile error: '==' cannot be applied to 'Kilometers' and 'Miles'
+print(marathon == m)  // compile error: binary operator '==' cannot be applied to operands of type 'Kilometers' and 'Miles'
 ```
 
 `Comparable` requires `<`, and, through its parent protocol `Equatable`, `==`; the compiler writes `==` for us, since every stored property of the struct is itself `Equatable`. The `description` property, required by `CustomStringConvertible`, controls how a value looks when it's printed or interpolated into a string, which is why `print` shows `45.195 km`.

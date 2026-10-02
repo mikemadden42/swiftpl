@@ -62,7 +62,7 @@ extension Array where Element == Interval {
         var current: Interval? = nil  // the run of overlapping intervals being merged
         for next in sorted(by: { $0.lower < $1.lower }) {
             if var run = current, next.lower <= run.upper {
-                run.upper = max(run.upper, next.upper)  // extend the run
+                run.upper = Swift.max(run.upper, next.upper)  // extend the run
                 current = run
             } else {
                 total += current?.length ?? 0  // close the previous run
@@ -81,7 +81,7 @@ let schedule = [
 print(schedule.coveredLength())  // "3.0"
 ```
 
-The `where` clause limits the extension to arrays whose elements are `Interval`s, so `coveredLength()` is available on `[Interval]` and nowhere else. Inside it, `self` is the array, and `sorted(by:)` is the array's own method. The algorithm sorts the intervals by start time and sweeps through them, merging each into the current *run* if it overlaps and starting a new run otherwise.
+The `where` clause limits the extension to arrays whose elements are `Interval`s, so `coveredLength()` is available on `[Interval]` and nowhere else. Inside it, `self` is the array, and `sorted(by:)` is the array's own method. So is `max()`, which shadows the global `max` function; the module name `Swift.` reaches past the array's method to the global one. The algorithm sorts the intervals by start time and sweeps through them, merging each into the current *run* if it overlaps and starting a new run otherwise.
 
 Extending types you don't own is routine in Swift, and it's more flexible than what some languages allow, where methods can be declared only on types defined in the same package or class. The two limits are that an extension can't add *stored* properties, since that would change the type's memory layout, and can't replace a member the type already has.
 
@@ -354,9 +354,11 @@ A method can also be referenced through its *type*, as `Interval.contains`. This
 
 ```swift
 let containment = Interval.contains
-print(type(of: containment))  // "(Interval) -> (Double) -> Bool"
+print(type(of: containment))  // "@Sendable (Interval) -> @Sendable (Double) -> Bool"
 print(containment(.unit)(0.5))  // "true"
 ```
+
+The printed type includes `@Sendable` because `Interval` is `Sendable`, so a reference to one of its methods is safe to share between tasks (Section 9.1).
 
 That's occasionally useful for applying the same method to many instances. Operators, which are static functions, can be chosen dynamically the same way, which is often clearer than branching inside a loop. Here a report finds either the earliest start or the latest finish in a list of intervals, depending on a flag:
 

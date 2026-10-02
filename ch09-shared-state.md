@@ -93,7 +93,7 @@ The compiler applies these rules wherever a value moves between concurrent conte
 var total = 0
 await withTaskGroup(of: Void.self) { group in
     group.addTask {
-        total += 1  // error: mutation of captured var 'total' in concurrently-executing code
+        total += 1  // error: main actor-isolated var 'total' can not be mutated from a nonisolated context
     }
 }
 ```
@@ -390,8 +390,10 @@ Here's a deliberate lie to the compiler, and the result of running it under TSan
 nonisolated(unsafe) var hits = 0
 
 await withTaskGroup(of: Void.self) { group in
-    for _ in 0..<2 {
-        group.addTask { hits += 1 }
+    for _ in 0..<4 {
+        group.addTask {
+            for _ in 0..<1000 { hits += 1 }
+        }
     }
 }
 ```
@@ -472,12 +474,12 @@ for url in urlsToFetch() {
 A typical run shows the cache working: repeats come back almost instantly. (Your timings and sizes will differ.)
 
 ```
-https://www.swift.org, 0.175026 seconds, 21342 bytes
-https://forums.swift.org, 0.406393 seconds, 86104 bytes
-https://swiftpackageindex.com, 0.633774 seconds, 148203 bytes
-https://www.swift.org, 0.000002 seconds, 21342 bytes
-https://forums.swift.org, 0.000001 seconds, 86104 bytes
-https://swiftpackageindex.com, 0.000001 seconds, 148203 bytes
+https://www.swift.org, 0.175026291 seconds, 21342 bytes
+https://forums.swift.org, 0.406393583 seconds, 86104 bytes
+https://swiftpackageindex.com, 0.633774125 seconds, 148203 bytes
+https://www.swift.org, 6.1083e-05 seconds, 21342 bytes
+https://forums.swift.org, 5.525e-05 seconds, 86104 bytes
+https://swiftpackageindex.com, 5.6209e-05 seconds, 148203 bytes
 ```
 
 But the fetches happen one after another, which wastes the opportunity to overlap them. So let's issue them all at once, one child task per URL:
@@ -487,7 +489,7 @@ await withTaskGroup(of: Void.self) { group in
     for url in urlsToFetch() {
         group.addTask {
             let start = ContinuousClock.now
-            let value = try? await m.get(url)  // error: capture of non-sendable type 'Memo<String, Data>'
+            let value = try? await m.get(url)  // error: non-Sendable type 'Memo<String, Data>' of let 'm' cannot exit main actor-isolated context
             print("\(url), \(ContinuousClock.now - start), \(value?.count ?? 0) bytes")
         }
     }
@@ -574,12 +576,12 @@ The actor doesn't become a bottleneck either. The expensive function runs in its
 Run the concurrent driver against this version and the pattern of the output changes:
 
 ```
-https://www.swift.org, 0.176201 seconds, 21342 bytes
-https://www.swift.org, 0.176310 seconds, 21342 bytes
-https://forums.swift.org, 0.414012 seconds, 86104 bytes
-https://forums.swift.org, 0.414104 seconds, 86104 bytes
-https://swiftpackageindex.com, 0.640027 seconds, 148203 bytes
-https://swiftpackageindex.com, 0.640190 seconds, 148203 bytes
+https://www.swift.org, 0.176201458 seconds, 21342 bytes
+https://www.swift.org, 0.176310041 seconds, 21342 bytes
+https://forums.swift.org, 0.414012125 seconds, 86104 bytes
+https://forums.swift.org, 0.414104708 seconds, 86104 bytes
+https://swiftpackageindex.com, 0.640027334 seconds, 148203 bytes
+https://swiftpackageindex.com, 0.640190875 seconds, 148203 bytes
 ```
 
 Each duplicate request now takes as long as the original, because it waited for the original, but each URL was fetched exactly once.

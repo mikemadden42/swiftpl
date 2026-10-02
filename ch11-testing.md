@@ -72,13 +72,14 @@ import Slug
 ```
 $ swift test
 Building for debugging...
-Test run started.
-Testing Library Version: 6.1
+◇ Test run started.
+↳ Testing Library Version: 6.4
+↳ Target Platform: arm64e-apple-macos14.0
 ◇ Test simpleTitle() started.
 ◇ Test extraSpaces() started.
 ✔ Test simpleTitle() passed after 0.001 seconds.
 ✔ Test extraSpaces() passed after 0.001 seconds.
-✔ Test run with 2 tests passed after 0.001 seconds.
+✔ Test run with 2 tests in 0 suites passed after 0.001 seconds.
 ```
 
 (The exact format of the output varies a little between toolchain versions.)
@@ -98,8 +99,12 @@ Both tests pass. Then the bug reports start arriving. A post titled "Hello, Worl
 Both fail, as they should:
 
 ```
-✘ Test punctuation() recorded an issue at SlugTests.swift:13:5: Expectation failed: (slugify("Hello, World!") → "hello,-world!") == "hello-world"
-✘ Test accents() recorded an issue at SlugTests.swift:17:5: Expectation failed: (slugify("Crème brûlée") → "crème-brûlée") == "creme-brulee"
+✘ Test punctuation() recorded an issue at SlugTests.swift:13:5: Expectation failed: slugify("Hello, World!") == "hello-world"
+↳ slugify("Hello, World!") == "hello-world" → false
+↳   slugify("Hello, World!") → "hello,-world!"
+✘ Test accents() recorded an issue at SlugTests.swift:17:5: Expectation failed: slugify("Crème brûlée") == "creme-brulee"
+↳ slugify("Crème brûlée") == "creme-brulee" → false
+↳   slugify("Crème brûlée") → "crème-brûlée"
 ```
 
 Look at what the failure message contains: the source text of the expression, and the value of each side of the `==`. The macro sees the expression's structure at compile time and arranges to capture the operands, so a plain `==` reports as much as a specialized `assertEqual` would. That's why Swift Testing needs only one checking macro.
@@ -232,8 +237,12 @@ func evalTable(_ c: Case) throws {
 Since `evalTable` is declared `throws`, it can call the parser with a plain `try`. If parsing fails, the error fails the test case and appears in the report. A failing case is identified by its description. If the expected result for the tax calculation had been mistyped as `26.5`, for instance, the report would say:
 
 ```
+✘ Test evalTable(_:) recorded an issue with 1 argument c → price * (1 + tax) at EvalTests.swift:23:5: Expectation failed: got == c.want
+↳ price * (1 + tax) in ["price": 24.5, "tax": 0.08]
+↳ got == c.want → false
+↳   got → "26.46"
+↳   c.want → "26.5"
 ✘ Test evalTable(_:) with 6 test cases failed after 0.002 seconds with 1 issue.
-✘ Test evalTable(_:) recorded an issue with 1 argument c → price * (1 + tax): Expectation failed: (got → "26.46") == (c.want → "26.5")
 ```
 
 ### 11.2.3. Throwing and Required Expectations
@@ -457,7 +466,7 @@ Often, though, the best way to test hard-to-reach behavior is to make it easy to
 // swiftpl/ch11/ratelimit/Sources/RateLimit/RateLimit.swift
 import Foundation
 
-struct RateLimiter {
+final class RateLimiter {
     let limit: Int
     let window: Double  // seconds
     private let now: () -> Double
@@ -470,7 +479,7 @@ struct RateLimiter {
     }
 
     /// Records an event and reports whether it's within the limit.
-    mutating func allow() -> Bool {
+    func allow() -> Bool {
         let t = now()
         recent.removeAll { $0 <= t - window }
         guard recent.count < limit else {
@@ -491,7 +500,7 @@ import Testing
 
 @Test func limitsBursts() {
     var time = 0.0
-    var limiter = RateLimiter(limit: 2, window: 1.0, now: { time })
+    let limiter = RateLimiter(limit: 2, window: 1.0, now: { time })
 
     #expect(limiter.allow())
     #expect(limiter.allow())
@@ -506,6 +515,8 @@ import Testing
 ```
 
 The test runs in microseconds, and its timing is exact. It's still a black-box test: it uses only the limiter's public behavior. The injected clock is part of the interface, not a peek at the implementation.
+
+`RateLimiter` is a class, not a struct, and that's partly for the test's sake. `#expect` evaluates its expression inside a closure, and a closure can't call a `mutating` method on a variable it captures, so `#expect(limiter.allow())` wouldn't compile if `allow()` were `mutating`. A class's methods can update its stored properties without being `mutating`.
 
 ### 11.2.9. Writing Good Tests
 
