@@ -66,11 +66,11 @@ $ swift run
 ¡Hola, mundo! 👋
 ```
 
-The examples require Swift 6.0 or later; the few that use features from Swift 6.1 or 6.2 say so. To see which version you have:
+The examples require Swift 6.4 or later. To see which version you have:
 
 ```
 $ swift --version
-Swift version 6.2 (swift-6.2-RELEASE)
+Swift version 6.4 (swift-6.4-RELEASE)
 Target: x86_64-unknown-linux-gnu
 ```
 

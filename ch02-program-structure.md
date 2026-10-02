@@ -482,7 +482,7 @@ Module names keep declarations from colliding. Two modules can each declare a ty
 Let's turn our distance types into a reusable library. The package will contain a library target, `Distance`, and a command-line tool, `dist`, that uses it:
 
 ```swift
-// swift-tools-version: 6.0
+// swift-tools-version: 6.4
 import PackageDescription
 
 let package = Package(

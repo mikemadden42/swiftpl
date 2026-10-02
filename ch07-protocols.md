@@ -1509,8 +1509,8 @@ for article in reader.articles {
 
 ```
 $ download https://www.swift.org/atom.xml | swift run feed
-Announcing Swift 6.2
-    https://www.swift.org/blog/swift-6.2-released/
+Announcing Swift 6.4
+    https://www.swift.org/blog/swift-6.4-released/
 Swift on Embedded Devices: A Progress Report
     https://www.swift.org/blog/embedded-progress/
 ...

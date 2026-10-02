@@ -54,7 +54,7 @@ Each package is self-contained. Its dependencies are checked out under its own `
 The manifest, `Package.swift`, is a Swift program. It imports the `PackageDescription` module and creates a value of type `Package` describing the package. Here's a manifest for a package with a library, a command-line tool that uses it, and a test suite:
 
 ```swift
-// swift-tools-version: 6.0
+// swift-tools-version: 6.4
 import PackageDescription
 
 let package = Package(

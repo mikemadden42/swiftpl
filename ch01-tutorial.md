@@ -443,7 +443,7 @@ The compiler is also checking something we haven't mentioned. Each child task ru
 Swift is used for servers as well as clients. Foundation includes an HTTP client but not a server, so for this section we'll use Hummingbird, a compact open-source web framework built on SwiftNIO, the networking library at the base of most server-side Swift. Using it means depending on another package, which the manifest declares:
 
 ```swift
-// swift-tools-version: 6.0
+// swift-tools-version: 6.4
 import PackageDescription
 
 let package = Package(

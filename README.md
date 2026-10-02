@@ -167,7 +167,7 @@ Example programs carry a label such as `swiftpl/ch1/hello`, which names the pack
 
 ## Requirements
 
-The examples target Swift 6 in the Swift 6 language mode, with strict concurrency checking, on macOS or Linux. Some use features from Swift 6.1 or 6.2, which the text points out. Chapter 10 explains how to declare package dependencies. The packages used in the book are:
+The examples target Swift 6.4 in the Swift 6 language mode, with strict concurrency checking, on macOS or Linux. Chapter 10 explains how to declare package dependencies. The packages used in the book are:
 
 | Package | Used for | Chapters |
 |---|---|---|

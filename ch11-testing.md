@@ -178,7 +178,7 @@ import Slug
     ("Hello, World!", "hello-world"),
     ("Crème brûlée", "creme-brulee"),
     ("Ünïcödé", "unicode"),
-    ("Swift 6.2 released", "swift-6-2-released"),
+    ("Swift 6.4 released", "swift-6-4-released"),
     ("C++ vs. C#", "c-vs-c"),
     ("日本語", "日本語"),
     ("Straße", "straße"),  // ß is a letter of its own, not an accented s
