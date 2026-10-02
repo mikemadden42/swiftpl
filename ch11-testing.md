@@ -516,7 +516,7 @@ import Testing
 
 The test runs in microseconds, and its timing is exact. It's still a black-box test: it uses only the limiter's public behavior. The injected clock is part of the interface, not a peek at the implementation.
 
-`RateLimiter` is a class, not a struct, and that's partly for the test's sake. `#expect` evaluates its expression inside a closure, and a closure can't call a `mutating` method on a variable it captures, so `#expect(limiter.allow())` wouldn't compile if `allow()` were `mutating`. A class's methods can update its stored properties without being `mutating`.
+`RateLimiter` is a class, not a struct, and that's partly for the test's sake. To capture the values in a failing call, `#expect` rewrites `limiter.allow()` into a closure that receives `limiter` as an immutable parameter, so `#expect(limiter.allow())` wouldn't compile if `allow()` were `mutating` ("cannot use mutating member on immutable value"). A class's methods can update its stored properties without being `mutating`.
 
 ### 11.2.9. Writing Good Tests
 
@@ -680,7 +680,7 @@ Slug:slugify
 ...
 ```
 
-(The figures are illustrative.) Fourteen allocations for one short title suggests room for improvement: every word becomes a separate `String`, then an array element, before being joined.
+(The figures are illustrative.) Fourteen allocations for one short title suggests room for improvement. The words themselves are short enough to be stored inline (Section 3.5), so the allocations come from the rest of the work: the folded and lowercased copies of the title, the array of words and its growth, and the joined result.
 
 Whatever the tool, the method is the same. Decide what you want to know before you measure. Measure optimized builds on realistic inputs. Change one thing at a time. Compare before and after on the same machine. And be suspicious of results that look too good.
 

@@ -549,7 +549,7 @@ let podium = finishers.sorted().prefix(3)
 let winner = finishers.min()!
 ```
 
-In return for that one operator, the type gets `sort()`, `sorted()`, `min()`, `max()`, the other comparison operators, ranges, and `clamped(to:)`, all from protocol extensions.
+In return for that one operator, the type gets `sort()`, `sorted()`, `min()`, `max()`, the other comparison operators, and ranges (`a...b`, with methods such as `contains(_:)` and `clamped(to:)`), all from protocol extensions.
 
 `<` must be a *strict weak ordering*: never true of an element and itself, transitive, and consistent in what it treats as ties. Sorting depends on it, and a comparison that breaks these rules can produce output that isn't sorted, without any error.
 

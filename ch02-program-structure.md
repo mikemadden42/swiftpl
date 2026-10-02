@@ -9,7 +9,7 @@ Names in Swift, whether of variables, functions, types, enum cases, or modules, 
 Some words are reserved by the language:
 
 ```
-actor       class       enum        func        import      init
+class       enum        func        import      init
 let         protocol    struct      subscript   typealias   var
 extension   deinit      associatedtype          operator    precedencegroup
 
@@ -21,7 +21,7 @@ while       try         await
 as   Any  false  is  nil  self  Self  super  true
 ```
 
-Many other words, such as `mutating`, `override`, `lazy`, `weak`, `some`, `any`, `open`, and `async`, are *contextual*: they're keywords only in particular positions and ordinary names everywhere else. To use a reserved word as a name, perhaps to match a field in a data format, surround it with backticks, as in ``let `class` = "economy"``. Swift 6 also lets backticks enclose names with spaces and punctuation, which is mostly used for descriptive test names (Chapter 11).
+Many other words, such as `actor`, `mutating`, `override`, `lazy`, `weak`, `some`, `any`, `open`, and `async`, are *contextual*: they're keywords only in particular positions and ordinary names everywhere else. To use a reserved word as a name, perhaps to match a field in a data format, surround it with backticks, as in ``let `class` = "economy"``. Since Swift 6.2, backticks can also enclose names with spaces and punctuation, which is mostly used for descriptive test names (Chapter 11).
 
 The standard library declares many names of its own, such as `Int`, `String`, `print`, `min`, and `max`. These aren't reserved; your own declarations can reuse them, hiding the library's versions within their scope. That's legal but rarely wise.
 
@@ -589,7 +589,7 @@ Lazy initialization means that a program never pays for globals it doesn't use, 
 When a global's initial value takes more than one expression to compute, use a closure that's called immediately, or any other expression that produces the value. Here's an example: a function that computes the CRC-32 checksum, used in ZIP files, PNG images, and Ethernet frames to detect corrupted data. The fast way to compute it uses a table of 256 precomputed values, one for each possible byte, and the table is a perfect candidate for a lazily initialized global:
 
 ```swift
-// swiftpl/ch2/crc32
+// swiftpl/ch2/crc32/Sources/crc32/CRC32.swift
 /// crcTable[n] is the CRC-32 of the single byte n, used to process input a byte at a time.
 let crcTable: [UInt32] = (0..<256).map { n in
     var c = UInt32(n)
@@ -607,11 +607,16 @@ func crc32(_ bytes: some Sequence<UInt8>) -> UInt32 {
     }
     return crc ^ 0xFFFF_FFFF
 }
+```
 
+The main program, in its own file, uses it:
+
+```swift
+// swiftpl/ch2/crc32/Sources/crc32/main.swift
 print(String(crc32("hello".utf8), radix: 16))  // "3610a686"
 ```
 
-The table is built by `map` over the range `0..<256`, with a closure that computes each entry from the polynomial `0xEDB88320`; the details of the arithmetic, a bitwise form of polynomial division, don't matter here. What does matter is when it runs: because `crcTable` is a global in a file other than `main.swift`, the table is built the first time `crc32` uses it, and never again, however many checksums are computed or tasks compute them.
+The table is built by `map` over the range `0..<256`, with a closure that computes each entry from the polynomial `0xEDB88320`; the details of the arithmetic, a bitwise form of polynomial division, don't matter here. What does matter is when it runs: because `crcTable` is a global in a file other than `main.swift` (which is why the example uses two files), the table is built the first time `crc32` uses it, and never again, however many checksums are computed or tasks compute them.
 
 The parameter type `some Sequence<UInt8>` means that `crc32` accepts any sequence of bytes, such as an array, a string's UTF-8 view, or a `Data` value. Section 7.5 explains this notation.
 

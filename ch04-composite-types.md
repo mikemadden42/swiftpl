@@ -549,7 +549,7 @@ let b = GridPoint(row: 2, column: 1)
 print(a == b)  // "false"
 ```
 
-`Hashable` and `Codable` (Section 4.5) are synthesized the same way. `Comparable` is synthesized only for enums whose cases have no associated values, which are ordered by declaration; for a struct, there's no single natural order of its properties, so you write `<` yourself.
+`Hashable` and `Codable` (Section 4.5) are synthesized the same way. `Comparable` is synthesized only for enums (without raw values), which are ordered by the declaration order of their cases, then by their associated values, which must themselves be `Comparable`; for a struct, there's no single natural order of its properties, so you write `<` yourself.
 
 ### 4.4.3. Composition and Forwarding
 

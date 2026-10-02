@@ -71,7 +71,7 @@ struct Hello {
 }
 ```
 
-Statements end at the end of a line; semicolons are needed only to put two statements on one line, which is rare. Swift doesn't impose a layout on your code, but the toolchain includes `swift format`, which rewrites code into a consistent style, and all the examples in this book follow its conventions. Editors that use Swift's language server, SourceKit-LSP, can format on every save.
+Statements end at the end of a line; semicolons are needed only to put two statements on one line, which is rare. Swift doesn't impose a layout on your code, but the toolchain includes `swift format`, which rewrites code into a consistent style, and the examples in this book follow its conventions, except that they indent by four spaces rather than its default of two (a `.swift-format` configuration file sets that). Editors that use Swift's language server, SourceKit-LSP, can format on every save.
 
 ## 1.2. Command-Line Arguments
 
@@ -557,7 +557,7 @@ try await app.runService()
 
 ### 1.7.2. Serving Images
 
-A handler can return images as well as text. Put the `spirograph` function from Section 1.4, with its constants, into another file of the package, and add a route for it:
+A handler can return images as well as text. Put the `spirograph` function from Section 1.4, with its constants, into another file of the package, and add a route for it in `main.swift`. Put it with the other routes, before the `Application` is created: `runService` doesn't return until the server stops, so code after it never runs while the server is up.
 
 ```swift
 // swiftpl/ch1/greet2 (continued; also needs spirograph() and its constants from ch1/spirograph)
